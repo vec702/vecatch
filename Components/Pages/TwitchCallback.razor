@@ -1,0 +1,49 @@
+﻿@page "/twitchcallback"
+@using System.Net.Sockets
+@using System.Net.Security
+@using VeCatch.Services
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JSRuntime
+@inject ChatService ChatService
+@rendermode InteractiveServer
+
+<center>
+    <br /><br /><br />
+<h3>Logging into Twitch...</h3>
+    <br /><br />
+@if(COMPLETE)
+{
+    <h4>Success!</h4>
+}
+
+</center>
+
+<script src="js/twitchAuth.js" ></script>
+
+@code {
+    private bool COMPLETE = false;
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try
+            {
+                var token = await JSRuntime.InvokeAsync<string>("extractTwitchToken");
+
+                if (!string.IsNullOrEmpty(token))
+                {
+                    ChatService.SetAccessToken(token);
+                    NavigationManager.NavigateTo("/catchem", forceLoad: true);
+                }
+                else
+                {
+                    Console.Error.WriteLine("Twitch access token was not found in the URL fragment.");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"Error extracting Twitch token: {ex.Message}");
+            }
+        }
+    }
+}

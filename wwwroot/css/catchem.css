@@ -1,0 +1,376 @@
+﻿@font-face {
+    font-family: 'PKMN RBYGSC' !important;
+    src: local('PKMN RBYGSC'), url('PKMN RBYGSC.ttf') format('truetype') !important;
+}
+
+/*.battle-container {
+    position: relative;
+    margin: 20px auto;
+    height: 100%;
+    width: 100%;
+    max-width: 100%;
+    overflow: hidden;
+    transform: scale(1.5);
+    transform-origin: top left;
+    margin-left: -25%;
+}*/
+
+.battle-container {
+    position: relative;
+    transform: scale(1.5);
+    margin: 20px auto;
+    transform-origin: top left;
+    margin-left: 0;
+    width: calc(100vw / 1.633);
+    overflow: hidden;
+    font-family: 'PKMN RBYGSC', sans-serif !important;
+}
+
+
+.messages p {
+    position: relative;
+    font-family: 'PKMN RBYGSC', sans-serif !important;
+    font-size: 11px;
+    font-weight: bold;
+    left: -40px;
+    top: -4px;
+}
+
+.messages p2 {
+    position: relative;
+    font-family: 'PKMN RBYGSC', sans-serif !important;
+    left: -40px;
+    font-size: 9px;
+    font-weight: bold;
+    top: -48px;
+}
+
+.battle-container h4 {
+    position: relative;
+    font-family: 'PKMN RBYGSC', sans-serif !important;
+    font-size: 16px;
+    font-weight: bold;
+    top: -36px;
+    z-index: 4;
+}
+
+.background, .plot {
+    position: absolute;
+    height: 152px;
+    left: 50%;
+    top: 32px;
+    transform: translateX(-50%);
+    background-size: cover;
+    background-repeat: no-repeat;
+}
+
+.background {
+    background-position: 0px 0px;
+    width: 352px;
+    z-index: 1;
+}
+
+.plot {
+    z-index: 2;
+    width: 256px;
+}
+
+.pokemon-container {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    overflow: hidden;
+    padding: 20px;
+    width: 384px;
+    height: 180px;
+    margin: 20px auto;
+}
+
+.health-bar-container {
+    position: relative;
+    top: -96px;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    max-height: 16px;
+    max-width: 134px;
+    width: 134px;
+    height: 16px;
+    margin: 20px auto;
+    z-index: 4;
+}
+
+.health-bar-background {
+    position: absolute;
+    left: 34px;
+    bottom: 5px;
+    width: 100%;
+    max-width: 96px;
+    max-height: 6px;
+}
+
+.health-bar-foreground {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 134px;
+    height: 16px;
+}
+
+.pokemon-sprite.exit {
+    animation: slideFadeOut 0.8s ease-in forwards;
+    pointer-events: none;
+}
+
+.trainer-container {
+    position: absolute;
+    bottom: 84px;
+    left: 50%;
+    margin-left: -160px;
+    z-index: 3;
+}
+
+
+.trainer-name {
+    position: absolute;
+    top: -12px;
+    left: -8px;
+    text-align: center;
+    width: 86px;
+    max-width: 100%;
+    color: white;
+    text-shadow: 1px 0 0 #000, 0 -1px 0 #000, 0 1px 0 #000, -1px 0 0 #000;
+    font-size: 6px;
+    white-space: nowrap;
+    z-index: 3;
+}
+
+.trainer-sprite.pokemon {
+    image-rendering: pixelated;
+    bottom: 12px;
+    background-size: cover;
+    background-repeat: no-repeat !important;
+    background-position: center;
+}
+
+.trainer-sprite.exit {
+    animation: trainerExit 0.8s ease-out forwards;
+    pointer-events: none;
+}
+
+.trainer-sprite.pokemon.exit {
+    animation: trainerExit 0.8s ease-out forwards;
+    background-size: contain;
+    background-repeat: no-repeat;
+}
+
+.throwing {
+    animation: throwPokeball 1s linear forwards;
+}
+
+.shaking {
+    animation: shakePokeball 2s ease-in-out infinite;
+}
+
+.caught {
+    animation: caughtPokeball 1s linear infinite;
+}
+
+@keyframes caughtPokeball {
+    0% {
+        transform: translate(114px, 16px) rotate(0deg);
+    }
+
+    100% {
+        transform: translate(114px, 16px) rotate(0deg);
+    }
+}
+
+@keyframes throwPokeball {
+    0% {
+        transform: translate(0, 0) rotate(0deg);
+    }
+
+    50% {
+        transform: translate(54px, -16px) rotate(360deg);
+    }
+
+    100% {
+        transform: translate(114px, 16px) rotate(720deg);
+    }
+}
+
+@keyframes shakePokeball {
+    0% {
+        transform: translate(114px, 16px) rotate(0deg);
+    }
+
+    15% {
+        transform: translate(116px, 16px) rotate(10deg);
+    }
+
+    30% {
+        transform: translate(112px, 16px) rotate(-10deg);
+        filter: hue-rotate(-20deg) brightness(60%);
+    }
+
+    45% {
+        transform: translate(114px, 16px) rotate(10deg);
+    }
+
+    60% {
+        transform: translate(112px, 16px) rotate(-10deg);
+        filter: hue-rotate(0deg) brightness(100%);
+    }
+
+    75% {
+        transform: translate(116px, 16px) rotate(10deg);
+    }
+
+    90% {
+        transform: translate(112px, 16px) rotate(-10deg);
+    }
+
+    100% {
+        transform: translate(114px, 16px) rotate(0deg);
+    }
+}
+
+@keyframes slideFadeIn {
+    from {
+        transform: translateY(-30px) scale(0.5);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateY(0) scale(1.5);
+        opacity: 1;
+    }
+}
+
+
+@keyframes slideFadeOut {
+    from {
+        transform: translateY(0) scale(1.5);
+        opacity: 1;
+    }
+
+    to {
+        transform: translateY(30px) scale(0.5);
+        opacity: 0;
+    }
+}
+
+@keyframes trainerEnter {
+    from {
+        transform: translateY(-30px);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+@keyframes trainerExit {
+    0% {
+        opacity: 1;
+        transform: translateY(0);
+    }
+
+    100% {
+        opacity: 0;
+        transform: translateY(50px);
+    }
+}
+
+@keyframes pokemonExit {
+    0% {
+        opacity: 1;
+        transform: translateY(0) scale(1.5);
+    }
+
+    100% {
+        opacity: 0;
+        transform: translateY(50px) scale(0.5);
+    }
+}
+
+
+.chat-footer {
+    position: fixed;
+    max-height: 160px;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    background-color: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 10px;
+    text-align: center;
+    font-family: Arial, sans-serif;
+    box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.3);
+}
+
+.chatter-box {
+    max-height: 128px;
+    font-size: 8px;
+    overflow-y: auto;
+    border: 1px solid #ccc;
+    padding: 5px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 5px;
+    scrollbar-width: thin;
+    scrollbar-color: #888 #444;
+}
+
+    .chatter-box::-webkit-scrollbar {
+        width: 8px;
+    }
+
+    .chatter-box::-webkit-scrollbar-thumb {
+        background: #888;
+        border-radius: 4px;
+    }
+
+    .chatter-box::-webkit-scrollbar-track {
+        background: #444;
+    }
+
+.footer-menu {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.menu-button {
+    background: #444;
+    color: white;
+    border: none;
+    padding: 5px 10px;
+    cursor: pointer;
+    border-radius: 5px;
+    font-size: 12px;
+}
+
+    .menu-button:hover {
+        background: #666;
+    }
+
+.admin-panel {
+    max-height: 128px;
+    font-size: 10px;
+    overflow-y: auto;
+    border: 1px solid #ccc;
+    padding: 5px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 5px;
+}
+
+.hidden {
+    display: none;
+}

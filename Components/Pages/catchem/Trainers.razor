@@ -1,0 +1,111 @@
+﻿@page "/trainers"
+@using System.Globalization
+@using VeCatch.Services
+@using VeCatch.Models
+@using Microsoft.EntityFrameworkCore
+@inject ChatService ChatService
+@inject IDbContextFactory<DatabaseInfo> DbContextFactory
+@rendermode InteractiveServer
+
+<h3>Trainers</h3>
+
+@if (trainers == null)
+{
+    <p>Loading trainers...</p>
+}
+else if (trainers.Count == 0)
+{
+    <p>No trainers found.</p>
+}
+else
+{
+    <ul>
+        @foreach (var trainer in trainers)
+        {
+            <li>
+                <button @onclick="() => ToggleTrainer(trainer.Id)">
+                    @trainer.Name
+                </button>
+
+                @if (expandedTrainerId == trainer.Id)
+                {
+                    if (trainer.CaughtPokemon == null)
+                    {
+                        <p>Loading Pokémon...</p>
+                    }
+                    else if (trainer.CaughtPokemon.Count == 0)
+                    {
+                        <p>No Pokémon caught.</p>
+                    }
+                    else
+                    {
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Pokémon</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var pokemon in trainer.CaughtPokemon)
+                                {
+                                    if(pokemon != null)
+                                    {
+                                        <tr>
+                                            <td><img src="@pokemon.SpriteUrl" /></td>
+                                            <td>@CultureInfo.InvariantCulture.TextInfo.ToTitleCase(string.IsNullOrEmpty(pokemon.Name) ? "" : pokemon.Name)</td>
+                                        </tr>
+                                    }
+                                }
+                            </tbody>
+                        </table>
+                    }
+                }
+            </li>
+        }
+    </ul>
+}
+
+@code {
+    private List<Trainer> trainers = new();
+    private int? expandedTrainerId = null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        using var context = await DbContextFactory.CreateDbContextAsync();
+        trainers = await context.Trainers.ToListAsync();
+    }
+
+    private async Task UpdateUI()
+    {
+        if (!ChatService.CONNECTED)
+        {
+            Console.WriteLine("Skipping UI update: Chat is disconnected.");
+            return;
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task ToggleTrainer(int trainerId)
+    {
+        if (expandedTrainerId == trainerId)
+        {
+            expandedTrainerId = null;
+            await UpdateUI();
+            return;
+        }
+
+        expandedTrainerId = trainerId;
+
+        var trainer = trainers.FirstOrDefault(t => t.Id == trainerId);
+        if (trainer != null && trainer.CaughtPokemon == null)
+        {
+            using var context = await DbContextFactory.CreateDbContextAsync();
+            trainer.CaughtPokemon = await context.CaughtPokemon
+                .Where(p => p.TrainerId == trainerId)
+                .ToListAsync();
+        }
+
+        await UpdateUI();
+    }
+}

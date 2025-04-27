@@ -1,0 +1,1049 @@
+﻿@page "/catchem"
+@using Microsoft.Data.Sqlite
+@using System.Text.Json
+@using VeCatch.Services
+@using VeCatch.Models
+@using Microsoft.EntityFrameworkCore
+@using System.Globalization
+@inject ChatService ChatService
+@inject BattleService BattleService
+@inject PokemonService PokemonService
+@inject AuthService AuthService
+@inject TrainerService TrainerService
+@inject RedeemService RedeemService
+@inject CatchService CatchService
+@inject NavigationManager NavigationManager
+@inject IDbContextFactory<DatabaseInfo> _dbContextFactory
+@inject IDbContextFactory<PokemonDatabase> PokemonDb
+@inject HttpClient Http
+@inject IJSRuntime JS
+@rendermode InteractiveServer
+
+<script src="/js/catchEm.js"></script>
+<link rel="stylesheet" href="css/catchem.css">
+
+@{#region CSS Style}
+<style>
+    .trainer-sprite {
+        position: absolute;
+        bottom: 0;
+        image-rendering: pixelated;
+        z-index: 3;
+        width: 86px;
+        height: 128px;
+        background-color: rgba(0,0,0,0);
+        background-position: @GetTrainerSpritePosition();
+        background-size: 688px 1920px;
+        animation: trainerEnter 0.8s ease-out;
+        background-repeat: no-repeat;
+    }
+
+    .pokemon-sprite {
+        display: @CurrentPokemonDisplay;
+        position: absolute;
+        background-size: contain;
+        background-repeat: no-repeat;
+        background-position: center;
+        top: 58px;
+        image-rendering: pixelated;
+        z-index: 3;
+        animation: slideFadeIn 0.8s ease-out;
+        transform: scale(1.5);
+        transform-origin: center;
+    }
+
+    .pokeball-sprite {
+        display: @CurrentPokeballDisplay;
+        left: 100%;
+        margin-left: -224px;
+        image-rendering: pixelated;
+        background: url('/images/pokeballs.PNG');
+        background-position: @PokeballPosition;
+        background-size: 64px 16px;
+        z-index: 4;
+        overflow: hidden;
+        width: 16px;
+        height: 16px;
+    }
+
+    .health-bar-fill {
+        position: absolute;
+        left: 34px;
+        bottom: 5px;
+        max-width: 96px;
+        max-height: 6px;
+        height: 100%;
+        background: url("images/healthbar/fill.PNG") no-repeat center/cover;
+        -webkit-mask-image: url("images/healthbar/mask.PNG");
+        -webkit-mask-size: cover;
+        mask-image: url("images/healthbar/mask.PNG");
+        mask-size: cover;
+        z-index: 5;
+        transition: width 0.3s ease-in-out;
+    }
+</style>
+@{#endregion}
+
+<audio id="success" src="sounds/rby/SFX_CAUGHT_MON.wav" />
+<audio id="flee" src="sounds/rby/SFX_RUN.wav" />
+<audio id="cry" src="@currentPokemon?.Cry" />
+@if (currentPokemon != null)
+{
+    #region Pokemon Battle Container
+    <audio id="attackerscry" src="@AttackersCry" />
+    <audio id="throwing" src="sounds/rby/SFX_BALL_TOSS.wav" />
+    <audio id="hit" src="sounds/rby/SFX_SWAP.wav" />
+    <audio id="shaking" src="sounds/shaking.ogg" />
+    <audio id="breakout" src="sounds/rby/SFX_BALL_POOF.wav" />
+    <div class="battle-container">
+        <div class="background @(isHidden ? "hidden" : "")" style="background-image: url(@backgroundStyle); background-position-x: @backgroundOffset;"></div>
+        <div class="plot @(isHidden ? "hidden" : "")" style="background-image: url(@plotStyle); background-position-x: @backgroundOffset;"></div>
+        <div class="pokemon-container">
+            <img class="pokemon-sprite @(isExiting ? "exit" : "")" src="@currentPokemon.SpriteUrl" />
+            <div class="pokeball-sprite @pokeballAnimation"></div>
+        </div>
+
+        @if (TrainerIndex != -1)
+        {
+            <div class="trainer-container">
+                <div class="trainer-sprite @(isPokemon ? "pokemon" : "") @(isTrainerExiting ? "exit" : "")" style="background: url('@trainerSpriteUrl'); @(isPokemon ? "" : $"background-position: {GetTrainerSpritePosition()};")">
+                    <div class="trainer-name">@currentTrainer.Name</div>
+                </div>
+            </div>
+        }
+
+        @if (!string.IsNullOrEmpty(currentPokemon.Name))
+        {
+            <center><h4>@CultureInfo.InvariantCulture.TextInfo.ToTitleCase(@currentPokemon.Name)</h4></center>
+            <div class="health-bar-container">
+                <img src="images/healthbar/background.PNG" class="health-bar-background" />
+                <div class="health-bar-fill" style="max-width: 96px; width: @GetHealthWidth();"></div>
+                <img src="images/healthbar/foreground.PNG" class="health-bar-foreground" />
+            </div>
+        }
+    </div>
+    <center>
+        <div class="messages">
+            <p>@timerMessage</p>
+            <p2>@extraMessage</p2>
+        </div>
+    </center>
+    #endregion
+}
+else
+{
+    #region Blank Battle Container
+    <div class="battle-container">
+        <div class="pokemon-container">
+            <img class="pokemon-sprite" src="" />
+            @if (TrainerIndex != -1)
+            {
+                <div class="trainer-sprite">
+                    <div class="trainer-name"></div>
+                </div>
+                <div class="pokeball-sprite"></div>
+            }
+        </div>
+
+        @if (string.IsNullOrEmpty(string.Empty))
+        {
+            <center><h4></h4></center>
+        }
+    </div>
+    <center>
+        <div class="messages">
+            <p></p>
+            <p></p>
+        </div>
+    </center>
+    #endregion
+}
+
+@{#region Footer / Admin Panel}
+<footer class="chat-footer">
+    <div class="footer-menu">
+        <button @onclick="() => showAdminPanel = false" class="menu-button">Chatters</button>
+        <button @onclick="() => showAdminPanel = true" class="menu-button">Admin Panel</button>
+    </div>
+
+    @if (!showAdminPanel)
+    {
+        <h5>Active Chatters:</h5>
+        <div class="chatter-box">
+            @if (ChatService.ActiveChatters.Count == 0)
+            {
+                <p>- none</p>
+            }
+            else
+            {
+                @foreach (var chatter in ChatService.ActiveChatters)
+                {
+                    <p> - @chatter.Name</p>
+                }
+            }
+        </div>
+    }
+    else
+    {
+        <h5>Admin Panel:</h5>
+        <div class="admin-panel">
+            <button class="btn btn-primary" @onclick="RandomPokemon" disabled="@isCatching">Spawn Random Pokemon</button>
+            <button class="btn btn-secondary" @onclick="ToggleVisibility">Toggle Backgrounds</button>
+            <label># of Spawns before Raid:</label>
+            <input type="number" @bind="raidCountdownMax" min="1" />
+            <label>Raid Timer:</label>
+            <input type="number" @bind="raidTimer" min="1" />
+            <label>Catch Timer:</label>
+            <input type="number" @bind="catchTimer" min="1" />
+            <label>Time between Spawns:</label>
+            <input type="number" @bind="spawnTimer" min="1" />
+            <button @onclick="SaveSettings">Save to Cache</button>
+        </div>
+    }
+</footer>
+@{#endregion}
+
+@code {
+
+    #region Declarations
+    private string backgroundOffset = "0px";
+    private string PokeballPosition = "0px 0px;";
+    private Pokemon? currentPokemon;
+    private bool isCatching = false;
+    private bool isExiting = false;
+    private bool isHidden = false;
+    private bool isTrainerExiting = false;
+    private bool isPokemon = false;
+    private bool isSpawning = false;
+    private string CurrentPokemonDisplay = "none;";
+    private string CurrentPokeballDisplay = "none;";
+    private Chatter? winner;
+    private string timerMessage = "";
+    private MarkupString extraMessage = new MarkupString("");
+    private string backgroundStyle = "";
+    private string pokeballAnimation = "";
+    private string plotStyle = "";
+    private Trainer currentTrainer = new Trainer();
+    private int TrainerIndex = -1;
+    private bool showAdminPanel = false;
+    public string trainerSpriteUrl = "";
+    private List<Chatter> Catchers = new List<Chatter>();
+    private int raidCountdown = 10; // in spawns
+    private int raidCountdownMax; // in spawns
+    private int raidTimer = 120; // in seconds
+    private int catchTimer = 30; // in seconds
+    private int spawnTimer = 300; // in seconds
+    private string AttackersCry = string.Empty;
+    private Task? deathListenerTask;
+    #endregion
+
+    #region SQLite Code
+    private void InitializeDatabase()
+    {
+        using (var context = _dbContextFactory.CreateDbContext())
+        {
+            context.Database.ExecuteSqlRaw(@"
+                CREATE TABLE IF NOT EXISTS ""CaughtPokemon"" (
+                    ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                    ""Name"" TEXT,
+                    ""TrainerId"" INTEGER NOT NULL,
+                    ""Level"" INTEGER NOT NULL,
+                    ""MaxHP"" INTEGER NOT NULL,
+                    ""CurrentHP"" INTEGER NOT NULL,
+                    ""Attack"" INTEGER NOT NULL,
+                    ""Defense"" INTEGER NOT NULL,
+                    ""SpecialAttack"" INTEGER NOT NULL,
+                    ""SpecialDefense"" INTEGER NOT NULL,
+                    ""Speed"" INTEGER NOT NULL,
+                    ""CatchRate"" INTEGER NOT NULL,
+                    ""SpriteUrl"" TEXT,
+                    ""Type1"" INTEGER NOT NULL,
+                    ""Type2"" INTEGER NOT NULL,
+                    ""Cry"" TEXT,
+                    ""NationalDexNo"" INTEGER,
+                    ""DefaultSprite"" TEXT,
+                    ""ShinySprite"" TEXT,
+                    FOREIGN KEY(""TrainerId"") REFERENCES ""Trainers""(""Id"") ON DELETE CASCADE
+                );
+
+                CREATE TABLE IF NOT EXISTS ""Info"" (
+                    ""Id"" INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ""ChannelAvatar"" TEXT
+                );
+
+                CREATE TABLE IF NOT EXISTS ""Trainers"" (
+                    ""Id"" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                    ""Name"" TEXT,
+                    ""SpriteIndex"" INTEGER,
+                    ""UltraBalls"" INTEGER,
+                    ""Team1"" TEXT,
+                    ""Team2"" TEXT,
+                    ""Team3"" TEXT,
+                    ""Team4"" TEXT,
+                    ""Team5"" TEXT,
+                    ""Team6"" TEXT
+
+                );
+            ");
+        }
+
+        using(var context = PokemonDb.CreateDbContext())
+        {
+            context.Database.ExecuteSqlRaw(@"
+            CREATE TABLE IF NOT EXISTS Pokemon (
+                Id INTEGER PRIMARY KEY,
+                Name TEXT NOT NULL,
+                Level INTEGER NOT NULL,
+                BaseHP INTEGER NOT NULL,
+                BaseAttack INTEGER NOT NULL,
+                BaseDefense INTEGER NOT NULL,
+                BaseSpAtk INTEGER NOT NULL,
+                BaseSpDef INTEGER NOT NULL,
+                BaseSpeed INTEGER NOT NULL,
+                Type1 TEXT NOT NULL,
+                Type2 TEXT,
+                CatchRate INTEGER NOT NULL,
+                SpriteUrl TEXT NOT NULL,
+                CryUrl TEXT NOT NULL,
+                NationalDexNo INTEGER NOT NULL,
+                DefaultSprite TEXT,
+                ShinySprite TEXT
+            );");
+        }
+    }
+
+    public async Task CopyDatabaseFile(string filePath)
+    {
+        string tempFilePath = $"{filePath}.copy";
+        try
+        {
+            if (File.Exists(tempFilePath)) File.Delete(tempFilePath);
+            File.Copy(filePath, tempFilePath, true);
+            try
+            {
+                await UploadFile();
+            }
+            catch (Exception ex)
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine($"[ERROR] Sync failed!\n{ex.Message}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.WriteLine($"[ERROR] Copy failed!\n{ex.Message}");
+        }
+    }
+
+    private async Task UploadFile()
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine($"[INFO] Syncing to server...");
+        string filePath = $"{AuthService.GetChannelName()}.db";
+        string tempFilePath = $"{filePath}.copy";
+
+        try
+        {
+            await using (var db = await _dbContextFactory.CreateDbContextAsync())
+            {
+                await db.Database.ExecuteSqlRawAsync("PRAGMA wal_checkpoint(FULL);");
+            }
+            WaitForFileRelease(tempFilePath);
+            byte[] fileBytes = await File.ReadAllBytesAsync(tempFilePath);
+            using var sha256 = System.Security.Cryptography.SHA256.Create();
+            byte[] hashBytes = sha256.ComputeHash(fileBytes);
+            string hashString = BitConverter.ToString(hashBytes).Replace("-", "").ToLower();
+            var content = new MultipartFormDataContent();
+            content.Add(new ByteArrayContent(fileBytes), "file", Path.GetFileName(filePath));
+            var hashContent = new StringContent(hashString);
+            hashContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("text/plain");
+            content.Add(hashContent, "hash");
+            using HttpClient client = new();
+            client.DefaultRequestHeaders.Add("X-API-Key", "*** please generate your own =) ***");
+            var response = await client.PostAsync("*** please generate your own =) ***", content);
+            if (!response.IsSuccessStatusCode)
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine($"[ERROR] Sync failed!\n{response.StatusCode}");
+            }
+            else
+            {
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine($"[INFO] Sync successful.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.WriteLine($"[ERROR] Sync failed!\n{ex.Message}");
+        }
+        finally
+        {
+            Console.ResetColor();
+            if (File.Exists(tempFilePath)) File.Delete(tempFilePath);
+        }
+    }
+
+    private void CopyDatabaseFile(string sourcePath, string destinationPath)
+    {
+        using (FileStream sourceStream = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+        using (FileStream destinationStream = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None))
+        {
+            sourceStream.CopyTo(destinationStream);
+        }
+    }
+
+    private async Task TryDeleteFile(string path, int attempts = 5, int delayMs = 500)
+    {
+        for (int i = 0; i < attempts; i++)
+        {
+            try
+            {
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                    return;
+                }
+            }
+            catch (IOException)
+            {
+                await Task.Delay(delayMs);
+            }
+        }
+    }
+    private void WaitForFileRelease(string filePath)
+    {
+        int retries = 20;
+        int delay = 500;
+
+        // at most try for 10 seconds
+        for (int i = 0; i < retries; i++)
+        {
+            try
+            {
+                using (FileStream fs = File.Open(filePath, FileMode.Open, FileAccess.Read, FileShare.None))
+                {
+                    fs.Close();
+                    return; // file is now available
+                }
+            }
+            catch (IOException)
+            {
+                Task.Delay(delay).Wait();
+            }
+        }
+
+        throw new IOException($"The file {filePath} is still in use after multiple retries.");
+    }
+    #endregion
+
+    private void ToggleVisibility()
+    {
+        isHidden = !isHidden;
+    }
+
+    private string GetHealthWidth()
+    {
+        if (currentPokemon == null) return "0px";
+        if (ChatService.cs_currentPokemon == null) return "0px";
+        double healthPercentage = (double)currentPokemon.CurrentHP / currentPokemon.MaxHP;
+        int maxWidth = 96;
+        int calculatedWidth = (int)(maxWidth * healthPercentage);
+        return $"{calculatedWidth}px";
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try
+            {
+                var savedSettings = await JS.InvokeAsync<string>("loadTimers");
+
+                if (!string.IsNullOrEmpty(savedSettings))
+                {
+                    var settings = JsonSerializer.Deserialize<Dictionary<string, int>>(savedSettings);
+                    if (settings != null)
+                    {
+                        raidCountdownMax = settings.GetValueOrDefault("raidCountdownMax", raidCountdownMax);
+                        raidTimer = settings.GetValueOrDefault("raidTimer", raidTimer);
+                        catchTimer = settings.GetValueOrDefault("catchTimer", catchTimer);
+                        spawnTimer = settings.GetValueOrDefault("spawnTimer", spawnTimer);
+                        raidCountdown = raidCountdownMax;
+                        await UpdateUI();
+                    }
+                }
+                Console.WriteLine($"Loaded Settings: {savedSettings}");
+                ChatService.SendAlert($"Connected to chat.");
+                await StartSpawnTimer();
+            }
+            catch (JSException ex)
+            {
+                Console.WriteLine($"JSInterop error: {ex.Message}");
+            }
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        InitializeDatabase();
+        var uri = new Uri(NavigationManager.Uri);
+        var query = uri.Query;
+        var queryParams = System.Web.HttpUtility.ParseQueryString(query);
+
+        if (int.TryParse(queryParams["cell"], out int index))
+        {
+            TrainerIndex = index;
+        }
+
+        ChatService.OnChatUpdated -= UpdateUI;
+        ChatService.OnChatUpdated += UpdateUI;
+        ChatService.OnTrainerSpriteChanged -= UpdateTrainerSprite;
+        ChatService.OnTrainerSpriteChanged += UpdateTrainerSprite;
+        ChatService.OnCatchCommandReceived -= AddCatcher;
+        ChatService.OnCatchCommandReceived += AddCatcher;
+        BattleService.UpdateMessage -= InvokeMessage;
+        BattleService.UpdateMessage += InvokeMessage;
+        ChatService.ChatUpdateMessage -= InvokeMessageChat;
+        ChatService.ChatUpdateMessage += InvokeMessageChat;
+        RedeemService.RandomPkmnRedeem -= InvokeRandomPokemon;
+        RedeemService.RandomPkmnRedeem += InvokeRandomPokemon;
+        ChatService.ThrowOutPokemon -= InvokeSpecificPokemon;
+        ChatService.ThrowOutPokemon += InvokeSpecificPokemon;
+    }
+
+    private async Task SaveSettings()
+    {
+        var settings = new Dictionary<string, int>
+        {
+            { "raidCountdownMax", raidCountdownMax },
+            { "raidTimer", raidTimer },
+            { "catchTimer", catchTimer },
+            { "spawnTimer", spawnTimer }
+        };
+
+        await JS.InvokeVoidAsync("saveTimers", settings);
+    }
+
+    private async Task StartSpawnTimer()
+    {
+        while (true)
+        {
+            if (isSpawning) return;
+            isSpawning = true;
+            await Task.Delay(spawnTimer * 1000);
+            await RandomPokemon();
+            isSpawning = false;
+        }
+    }
+
+    #region Invokes
+    private Task AddCatcher(Chatter chatter)
+    {
+        if (!Catchers.Contains(chatter))
+        {
+            Catchers.Add(chatter);
+        }
+        return Task.CompletedTask;
+    }
+
+    private async Task InvokeMessage(MarkupString s)
+    {
+        extraMessage = s;
+        await InvokeAsync(() =>
+        {
+            StateHasChanged();
+        });
+    }
+
+    private async Task InvokeMessageChat(MarkupString s)
+    {
+        extraMessage = s;
+        await InvokeAsync(() =>
+        {
+            StateHasChanged();
+        });
+    }
+
+    private async Task InvokeRandomPokemon()
+    {
+        await InvokeAsync(async () =>
+        {
+            await RandomPokemon();
+        });
+    }
+
+    private async Task InvokeSpecificPokemon(Pokemon p)
+    {
+        await InvokeAsync(async () =>
+        {
+            await SpecificPokemon(p);
+        });
+    }
+
+    // only use for updating trainer -> pokemon, NOT the other way around!
+    private async Task UpdateTrainerSprite(string newSpriteUrl, string newCry)
+    {
+        AttackersCry = newCry;
+        await JS.InvokeVoidAsync("PlayAudio", "throwing");
+        await Task.Delay(1000);
+        await JS.InvokeVoidAsync("PlayAudio", "breakout");
+        isTrainerExiting = false;
+        isPokemon = true;
+        trainerSpriteUrl = newSpriteUrl;
+        TrainerIndex = 69420; // lol
+        await UpdateUI();
+        await JS.InvokeVoidAsync("PlayAudio", "attackerscry");
+        if(!BattleService.IsRaidActive)
+        {
+            await Task.Delay(2000);
+            isTrainerExiting = true;
+        } else
+        {
+            while(!ChatService.sentOutMonFainted)
+            {
+                await Task.Delay(100); // do nothing until the attacking mon faints
+            }
+            isTrainerExiting = true;
+        }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task UpdateUI()
+    {
+        if (!ChatService.CONNECTED)
+        {
+            Console.WriteLine("Skipping UI update: Chat is disconnected.");
+            return;
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+    #endregion
+
+    private string GetTrainerSpritePosition()
+    {
+        int row = TrainerIndex / 8;
+        int col = TrainerIndex % 8;
+        return $"-{col * 86}px -{row * 128}px";
+    }
+
+    #region Pokemon Generators
+    private async Task RandomRaid()
+    {
+        if (isCatching) return;
+        timerMessage = "";
+        isCatching = true;
+        isTrainerExiting = false;
+
+        currentPokemon = await PokemonService.GenerateRandomRaidPokemon();
+
+        if (currentPokemon == null)
+        {
+            await RemovePokemon();
+            return;
+        }
+
+        currentPokemon.MaxHP *= (int)3.5;
+        currentPokemon.CurrentHP = currentPokemon.MaxHP;
+
+        currentPokemon.Attack = (int)(currentPokemon.Attack * 1.5);
+        currentPokemon.SpecialAttack = (int)(currentPokemon.SpecialAttack * 1.5);
+        currentPokemon.Defense = (int)(currentPokemon.Defense * 1.5);
+        currentPokemon.SpecialDefense = (int)(currentPokemon.SpecialDefense * 1.5);
+        currentPokemon.Speed = (int)(currentPokemon.Speed * 1.5);
+
+        ChatService.cs_currentPokemon = currentPokemon;
+
+        winner = null;
+        Catchers = new List<Chatter>();
+        await UpdateUI();
+        await JS.InvokeVoidAsync("PlayAudio", "cry");
+
+        if (!string.IsNullOrEmpty(currentPokemon.Name))
+        {
+            BattleService.StartRaid();
+            raidCountdown = raidCountdownMax;
+            ChatService.SendAlert($"⚠️ A powerful {CultureInfo.InvariantCulture.TextInfo.ToTitleCase(currentPokemon.Name)} appeared! Type !raid to try & take it down! ⚠️");
+            ShowPokemonDisplay(currentPokemon);
+            await UpdateUI();
+        }
+        else await RemovePokemon();
+
+        for (int i = raidTimer; i > 0; i--)
+        {
+            deathListenerTask = DeathListener();
+            timerMessage = $"{i} second(s) remaining...";
+            await UpdateUI();
+            await Task.Delay(1000);
+
+            if(deathListenerTask.IsCompleted)
+            {
+                BattleService.EndRaid();
+                if (currentPokemon == null) break;
+                Pokemon pokeToSpawn = new Pokemon
+                    {
+                        Name = currentPokemon.Name,
+                        NationalDexNo = currentPokemon.NationalDexNo,
+                        CurrentHP = currentPokemon.MaxHP,
+                        MaxHP = currentPokemon.MaxHP,
+                        Attack = currentPokemon.Attack,
+                        Defense = currentPokemon.Defense,
+                        SpecialAttack = currentPokemon.SpecialAttack,
+                        SpecialDefense = currentPokemon.SpecialDefense,
+                        Speed = currentPokemon.Speed,
+                        CatchRate = currentPokemon.CatchRate,
+                        SpriteUrl = currentPokemon.SpriteUrl,
+                        Type1 = currentPokemon.Type1,
+                        Type2 = currentPokemon.Type2,
+                        Cry = currentPokemon.Cry
+                    };
+                await RemovePokemon();
+                await UpdateUI();
+                await Task.Delay(3000);
+                await SpecificPokemon(pokeToSpawn);
+            }
+        }
+
+        if(currentPokemon != null && currentPokemon.CurrentHP > 0)
+        {
+            ChatService.SendAlert($"The powerful {CultureInfo.InvariantCulture.TextInfo.ToTitleCase(currentPokemon.Name)} disappeared into the void.");
+            await RemovePokemon();
+            await UpdateUI();
+            await Task.Delay(3000);
+        }
+        raidCountdown = raidCountdownMax;
+        BattleService.EndRaid();
+        timerMessage = "";
+        await UpdateUI();
+    }
+
+    private async Task SpecificPokemon(Pokemon p)
+    {
+        if (isCatching) return;
+        await Task.Delay(1500);
+        isCatching = true;
+        isTrainerExiting = false;
+        p.Heal(p.MaxHP);
+        currentPokemon = p;
+        ChatService.cs_currentPokemon = currentPokemon;
+        string message = $"\n";
+        extraMessage = new MarkupString($"{message.Replace("\n", "<br />")}");
+        if (currentPokemon == null)
+        {
+            await RemovePokemon();
+            return;
+        }
+
+        winner = null;
+        Catchers = new List<Chatter>();
+        await UpdateUI();
+        await JS.InvokeVoidAsync("PlayAudio", "cry");
+
+        if (!string.IsNullOrEmpty(currentPokemon.Name))
+        {
+            ChatService.SendAlert($"A wild {CultureInfo.InvariantCulture.TextInfo.ToTitleCase(currentPokemon.Name)} appeared! Commands: !catch | !attack | !catchattack");
+            ShowPokemonDisplay(currentPokemon);
+            await UpdateUI();
+            await StartCatchTimer();
+        }
+        else await RemovePokemon();
+    }
+
+    private async Task RandomPokemon()
+    {
+        if (isCatching) return;
+        if(raidCountdown == 0)
+        {
+            await RandomRaid();
+            return;
+        }
+        isCatching = true;
+        isTrainerExiting = false;
+        currentPokemon = await PokemonService.GenerateRandomPokemon();
+        ChatService.cs_currentPokemon = currentPokemon;
+        string message = $"\n";
+        extraMessage = new MarkupString($"{message.Replace("\n", "<br />")}");
+        if(currentPokemon == null)
+        {
+            await RemovePokemon();
+            return;
+        }
+        winner = null;
+        Catchers = new List<Chatter>();
+        raidCountdown--;
+        await UpdateUI();
+        await JS.InvokeVoidAsync("PlayAudio", "cry");
+        if(!string.IsNullOrEmpty(currentPokemon.Name))
+        {
+            ChatService.SendAlert($"A wild {CultureInfo.InvariantCulture.TextInfo.ToTitleCase(currentPokemon.Name)} appeared! Commands: !catch | !attack | !catchattack");
+            ShowPokemonDisplay(currentPokemon);
+            await UpdateUI();
+            await StartCatchTimer();
+        }
+        else await RemovePokemon();
+    }
+    #endregion
+
+    private async void SetCatchDisplay(string[] args)
+    {
+        CurrentPokeballDisplay = args[0];
+        pokeballAnimation = args[1];
+        await UpdateUI();
+    }
+
+    private async void HidePokemonDisplay(Pokemon p)
+    {
+        SetBattleStyle(p?.Type1, p?.Type2);
+        CurrentPokemonDisplay = "none;";
+        await UpdateUI();
+    }
+
+    private async void ShowPokemonDisplay(Pokemon p)
+    {
+        if (p == null) return;
+        SetBattleStyle(p?.Type1, p?.Type2);
+        CurrentPokemonDisplay = "block;";
+        await UpdateUI();
+    }
+
+    private void SetBattleStyle(PokemonType? type, PokemonType? type2)
+    {
+        if (type == null) return;
+        switch (type)
+        {
+            case PokemonType.Grass or PokemonType.Bug:
+                backgroundStyle = "images/frlg/forest_bg.png";
+                plotStyle = "images/frlg/forest_plot.png";
+                break;
+            case PokemonType.Water:
+                backgroundStyle = "images/frlg/surf_bg.png";
+                plotStyle = "images/frlg/surf_plot.png";
+                break;
+            case PokemonType.Rock or PokemonType.Ground:
+                backgroundStyle = "images/frlg/rocky_bg.png";
+                plotStyle = "images/frlg/rocky_plot.png";
+                break;
+            case PokemonType.Dark or PokemonType.Psychic or PokemonType.Poison or PokemonType.Ghost:
+                backgroundStyle = "images/frlg/eerie_bg.png";
+                plotStyle = "images/frlg/eerie_plot.png";
+                break;
+            default:
+                backgroundStyle = "images/frlg/default_bg.png";
+                plotStyle = "images/frlg/default_plot.png";
+                break;
+        }
+        switch(type2)
+        {
+            case PokemonType.Water:
+                backgroundStyle = "images/frlg/pond_bg.png";
+                plotStyle = "images/frlg/pond_plot.png";
+                break;
+        }
+    }
+
+    private async Task DeathListener()
+    {
+        bool messageSent = false;
+
+        while(currentPokemon != null)
+        {
+            if(currentPokemon?.CurrentHP <= 0)
+            {
+                if(BattleService.IsRaidActive)
+                {
+                    if (messageSent) return;
+                    messageSent = true;
+                    string message = $"\nThe powerful { CultureInfo.InvariantCulture.TextInfo.ToTitleCase(currentPokemon.Name)}fainted!";
+                    extraMessage = new MarkupString($"{message.Replace("\n", "<br />")}");
+                    ChatService.SendAlert($"The raiders are successful, {CultureInfo.InvariantCulture.TextInfo.ToTitleCase(currentPokemon.Name)} fainted!");
+                    await UpdateUI();
+                    break;
+                } 
+                else
+                {
+                    if (messageSent) return;
+                    messageSent = true;
+                    string message = $"\nThe wild {CultureInfo.InvariantCulture.TextInfo.ToTitleCase(currentPokemon.Name)} fainted!";
+                    extraMessage = new MarkupString($"{message.Replace("\n", "<br />")}");
+                    ChatService.SendAlert($"The wild {CultureInfo.InvariantCulture.TextInfo.ToTitleCase(currentPokemon.Name)} fainted!");
+                    await UpdateUI();
+                    break;
+                }
+            }
+            await Task.Delay(500);
+        }
+        await Task.CompletedTask;
+    }
+
+    #region Catch Timer
+    private async Task StartCatchTimer()
+    {
+        deathListenerTask = DeathListener();
+
+        for (int i = catchTimer; i > 0; i--)
+        {
+            timerMessage = $"{i} second(s) remaining...";
+            await UpdateUI();
+            await Task.Delay(1000);
+
+            if(deathListenerTask.IsCompleted)
+            {
+                await Task.Delay(1000);
+                await RemovePokemon();
+                break;
+            }
+        }
+
+        timerMessage = "";
+        await UpdateUI();
+
+        while (BattleService.IsAttacking && !deathListenerTask.IsCompleted)
+        {
+            timerMessage = "Waiting for attackers...";
+            await UpdateUI();
+            await Task.Delay(3000);
+        }
+
+        if (currentPokemon == null)
+        {
+            await UpdateUI();
+            await RemovePokemon();
+            return;
+        }
+
+        foreach (var chatter in Catchers.OrderBy(_ => new Random().Next()))
+        {
+            if (currentPokemon == null) break;
+            if (deathListenerTask.IsCompleted) break;
+            isPokemon = false;
+            isTrainerExiting = false;
+            var trainer = await TrainerService.GetTrainer(chatter.Name);
+            if (trainer != null)
+            {
+                currentTrainer = trainer;
+                TrainerIndex = trainer.SpriteIndex;
+                trainerSpriteUrl = $"images/trainers.PNG?cell={TrainerIndex}";
+                PokeballPosition = "0px 0px;";
+
+                if(await TrainerService.HasPokemon(currentTrainer, currentPokemon))
+                {
+                    if(!string.IsNullOrEmpty(currentPokemon.Name))
+                    {
+                        timerMessage = $"{trainer.Name} has already caught {CultureInfo.InvariantCulture.TextInfo.ToTitleCase(currentPokemon.Name)}!";
+                        ChatService.SendAlert(timerMessage);
+                    }
+                    await UpdateUI();
+                    isTrainerExiting = true;
+                    await Task.Delay(1000);
+                    continue;
+                }
+            }
+            bool hasUltraBall = currentTrainer.UltraBalls > 0;
+            if (hasUltraBall)
+            {
+                if (trainer is null) continue;
+                trainer.UltraBalls--;
+                await TrainerService.UpdateTrainer(trainer);
+                timerMessage = $"{chatter.Name} threw an Ultra Ball!";
+                PokeballPosition = "-16px 0px;";
+            }
+            else timerMessage = $"{chatter.Name} threw a Poké Ball!";
+            await UpdateUI();
+            await Task.Delay(1000);
+            await JS.InvokeVoidAsync("PlayAudio", "throwing");
+            SetCatchDisplay(["block;", "throwing"]);
+            await UpdateUI();
+            await Task.Delay(1000);
+            await JS.InvokeVoidAsync("PlayAudio", "hit");
+            HidePokemonDisplay(currentPokemon);
+            SetCatchDisplay(["block;", "shaking"]);
+            await Task.Delay(500);
+            var healthRatio = (double)currentPokemon.CurrentHP / currentPokemon.MaxHP;
+            var numberOfShakes = CatchService.AttemptCatch(currentPokemon.CatchRate, healthRatio, hasUltraBall ? 2.0 : 1.0);
+            for (int i = 0; i < numberOfShakes; i++)
+            {
+                await JS.InvokeVoidAsync("PlayAudio", "shaking");
+                await Task.Delay(800);
+            }
+
+            await Task.Delay(200);
+
+            switch (numberOfShakes)
+            {
+                case 4:
+                    SetCatchDisplay(["block;", "caught"]);
+                    winner = chatter;
+                    if(currentPokemon != null && !string.IsNullOrEmpty(currentPokemon.Name))
+                    {
+                        await JS.InvokeVoidAsync("PlayAudio", "success");
+                        timerMessage = $"Gotcha! {CultureInfo.InvariantCulture.TextInfo.ToTitleCase(currentPokemon.Name)} was caught by {winner.Name}!";
+                        ChatService.SendAlert(timerMessage);
+                        await UpdateUI();
+                        await PokemonService.SavePokemon(currentPokemon, trainer!);
+                        await Task.Delay(3000);
+                        await RemovePokemon();
+                        await UpdateUI();
+                    }
+                    // sync database when a pokemon is caught by a chatter
+                    await CopyDatabaseFile($"{AuthService.GetChannelName()}.db");
+                    return;
+                case 3:
+                    timerMessage = "Gah! It was so close, too!";
+                    break;
+                case 2:
+                    timerMessage = "Argh! Almost had it!";
+                    break;
+                case 1:
+                    timerMessage = "Aww! It appeared to be caught!";
+                    break;
+                case 0:
+                    timerMessage = "Oh no! The Pokémon broke free!";
+                    break;
+            }
+            await JS.InvokeVoidAsync("PlayAudio", "breakout");
+            ShowPokemonDisplay(currentPokemon);
+            SetCatchDisplay(["none;", ""]);
+            await UpdateUI();
+            await Task.Delay(1000);
+            isTrainerExiting = true;
+            await Task.Delay(1000);
+            await UpdateUI();
+        }
+
+        await Task.Delay(1000);
+
+        if (currentPokemon != null && winner == null && !string.IsNullOrEmpty(currentPokemon.Name))
+        {
+            await JS.InvokeVoidAsync("PlayAudio", "flee");
+            timerMessage = $"The wild {CultureInfo.InvariantCulture.TextInfo.ToTitleCase(currentPokemon.Name)} escaped!";
+            ChatService.SendAlert(timerMessage);
+            await UpdateUI();
+            await RemovePokemon();
+        }
+    }
+    #endregion
+
+    private async Task RemovePokemon()
+    {
+        isExiting = true;
+        SetCatchDisplay(["none;", ""]);
+        await UpdateUI();
+        await Task.Delay(800);
+
+        if (currentPokemon != null)
+        {
+            HidePokemonDisplay(currentPokemon);
+            currentPokemon = null;
+        }
+        ChatService.cs_currentPokemon = null;
+        isExiting = false;
+        isCatching = false;
+        TrainerIndex = -1;
+        if (raidCountdown == 3) ChatService.SendAlert($"A powerful Pokemon is heard in the distance!");
+        else if(raidCountdown == 1) ChatService.SendAlert($"A powerful Pokemon is getting close!");
+        await UpdateUI();
+    }
+
+}

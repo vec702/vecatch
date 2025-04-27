@@ -1,0 +1,47 @@
+﻿@page "/help"
+
+<style>
+    .trainer-sprite {
+        image-rendering: pixelated;
+        z-index: 3;
+        background: url('/images/trainers.PNG');
+        width: 86px;
+        height: 128px;
+        background-color: rgba(0,0,0,0);
+        background-size: 688px 1920px;
+    }
+</style>
+
+<center>
+    <br />
+<h1>Help Page</h1>
+<br />
+<h3>Trainer Sprite Previews</h3>
+<table>
+    @for (int row = 0; row < 15; row++)
+    {
+        <tr>
+            @for (int col = 0; col <= 8; col++)
+            {
+                int index = row * 8 + col;
+                @if (index < 120)
+                {
+                    <td style="display: flex;">@index</td>
+                    <td>
+                        <div class="trainer-sprite" style="background-position: @GetTrainerSpritePosition(index);"></div>
+                    </td>
+                }
+            }
+        </tr>
+    }
+</table>
+</center>
+
+@code {
+    private string GetTrainerSpritePosition(int TrainerIndex)
+    {
+        int row = TrainerIndex / 8;
+        int col = TrainerIndex % 8;
+        return $"-{col * 86}px -{row * 128}px";
+    }
+}

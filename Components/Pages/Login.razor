@@ -1,0 +1,36 @@
+﻿@page "/"
+@using VeCatch.Services
+@inject NavigationManager NavigationManager
+@inject AuthService AuthService
+@rendermode InteractiveServer
+
+<!-- TODO: move twitch login to console for 'easier' UI / user accessibility -->
+
+<center>
+    <br />
+    <h3>Login with <img src="images/twitch_logo.png" style="height: 48px; width: 128px; vertical-align: middle;" /></h3>
+    <br />
+    <label for="channelName">Enter your Twitch Channel Name:</label>
+    <input @bind="channelName" placeholder="" />
+
+    <button class="btn btn-primary" @onclick="LoginWithTwitch">Login with Twitch</button>
+</center>
+@code {
+    private string channelName = "";
+
+    void LoginWithTwitch()
+    {
+        string clientId = "*** please generate your own =) ***";
+        string redirectUri = NavigationManager.BaseUri + "twitchcallback";
+        List<string> scopes = new List<string> { "chat:read", "chat:edit", "channel:read:redemptions", "channel:manage:redemptions" };
+
+        AuthService.SetChannelName(channelName);
+        var scopesString = String.Join('+', scopes);
+
+        string authUrl = "https://id.twitch.tv/oauth2/authorize?" +
+            $"client_id={clientId}&" +
+            $"redirect_uri={System.Web.HttpUtility.UrlEncode(redirectUri)}&" +
+            $"response_type=token&scope={scopesString}";
+        NavigationManager.NavigateTo(authUrl, forceLoad: true);
+    }
+}
