@@ -24,6 +24,28 @@
 
 @{#region CSS Style}
 <style>
+    .modal-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0,0,0,0.6);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+    }
+
+    .modal-content {
+        background-color: white;
+        padding: 2rem;
+        border-radius: 10px;
+        max-width: 600px;
+        width: 90%;
+        box-shadow: 0 0 15px rgba(0,0,0,0.3);
+    }
+
     .trainer-sprite {
         position: absolute;
         bottom: 0;
@@ -81,12 +103,30 @@
         z-index: 5;
         transition: width 0.3s ease-in-out;
     }
+
+    .attacker-health-fill {
+        position: absolute;
+        left: 17px;
+        bottom: -1.5px;
+        width: 48px;
+        max-width: 48px;
+        max-height: 3px;
+        height: 100%;
+        background: url("images/healthbar/fill.PNG") no-repeat center/cover;
+        -webkit-mask-image: url("images/healthbar/mask.PNG");
+        -webkit-mask-size: cover;
+        mask-image: url("images/healthbar/mask.PNG");
+        mask-size: cover;
+        z-index: 7;
+        transition: width 0.3s ease-in-out;
+    }
 </style>
 @{#endregion}
 
 <audio id="success" src="sounds/rby/SFX_CAUGHT_MON.wav" />
 <audio id="flee" src="sounds/rby/SFX_RUN.wav" />
 <audio id="cry" src="@currentPokemon?.Cry" />
+
 @if (currentPokemon != null)
 {
     #region Pokemon Battle Container
@@ -102,19 +142,46 @@
             <img class="pokemon-sprite @(isExiting ? "exit" : "")" src="@currentPokemon.SpriteUrl" />
             <div class="pokeball-sprite @pokeballAnimation"></div>
         </div>
+        @if (BattleService.IsPvP && BattleService.PvPChallenger is not null) // PVP Battle Container
+        {
+            <div class="trainer-container">
+                <div class="trainer-sprite @(isPokemon ? "pokemon" : "") @(isTrainerExiting ? "exit" : "")" style="background: url('@trainerSpriteUrl'); @(isPokemon ? "" : $"background-position: {GetTrainerSpritePosition()};")">
+                    <div class="trainer-name">@BattleService.PvPChallenger.Name</div>
 
-        @if (TrainerIndex != -1)
+                    @if (isPokemon && attackerPokemon != null)
+                    {
+                        <div class="attacker-health-container">
+                            <img src="images/healthbar/background.PNG" class="attacker-health-bar-background" />
+                            <div class="attacker-health-fill" style="width: @GetAttackerHealthWidth();"></div>
+                            <img src="images/healthbar/foreground.PNG" class="attacker-health-bar-foreground" />
+                        </div>
+                    }
+
+                </div>
+            </div>
+        }
+        else if (TrainerIndex != -1) // Non-PVP Battle Container
         {
             <div class="trainer-container">
                 <div class="trainer-sprite @(isPokemon ? "pokemon" : "") @(isTrainerExiting ? "exit" : "")" style="background: url('@trainerSpriteUrl'); @(isPokemon ? "" : $"background-position: {GetTrainerSpritePosition()};")">
                     <div class="trainer-name">@currentTrainer.Name</div>
+
+                    @if (isPokemon && attackerPokemon != null)
+                    {
+                        <div class="attacker-health-container">
+                            <img src="images/healthbar/background.PNG" class="attacker-health-bar-background" />
+                            <div class="attacker-health-fill" style="width: @GetAttackerHealthWidth();"></div>
+                            <img src="images/healthbar/foreground.PNG" class="attacker-health-bar-foreground" />
+                        </div>
+                    }
+
                 </div>
             </div>
         }
 
-        @if (!string.IsNullOrEmpty(currentPokemon.Name))
+        @if (!string.IsNullOrEmpty(currentPokemon.Name)) // Defending Pokemon
         {
-            <center><h4>@CultureInfo.InvariantCulture.TextInfo.ToTitleCase(@currentPokemon.Name)</h4></center>
+            <center><h4>@CultureInfo.InvariantCulture.TextInfo.ToTitleCase(currentPokemon.Name)</h4></center>
             <div class="health-bar-container">
                 <img src="images/healthbar/background.PNG" class="health-bar-background" />
                 <div class="health-bar-fill" style="max-width: 96px; width: @GetHealthWidth();"></div>
@@ -124,7 +191,12 @@
     </div>
     <center>
         <div class="messages">
-            <p>@timerMessage</p>
+            @if(BattleService.IsPvP) {
+                <p><br /></p>
+            } else
+            {
+                <p>@timerMessage</p>
+            }
             <p2>@extraMessage</p2>
         </div>
     </center>
@@ -159,47 +231,67 @@ else
     #endregion
 }
 
+@if (isAdminModalOpen)
+{
+    <div class="modal-overlay" @onclick="CloseAdminModal">
+        <div class="modal-content" @onclick:stopPropagation>
+            <center><h2>Settings</h2></center>
+            <button class="btn btn-primary" @onclick="RandomPokemon" disabled="@isCatching">Spawn Random Pokemon</button>
+            <button class="btn btn-secondary" @onclick="ToggleVisibility">@(isHidden ? "Display Background" : "Hide Background")</button>
+            <br />
+            <table>
+                <tr>
+                    <td><label># of Spawns before Raid:</label></td>
+                    <td><input type="number" @bind="raidCountdownMax" min="1" placeholder="in # of spawns" /> spawns</td>
+                </tr>
+                <tr>
+                    <td><label>Raid Timer:</label></td>
+                    <td><input type="number" @bind="raidTimer" min="1" placeholder="in seconds" /> seconds</td>
+                </tr>
+                <tr>
+                    <td><label>Catch Timer:</label></td>
+                    <td><input type="number" @bind="catchTimer" min="1" placeholder="in seconds" /> seconds</td>
+                </tr>
+                <tr>
+                    <td><label>Time between Spawns:</label></td>
+                    <td><input type="number" @bind="spawnTimer" min="1" placeholder="in seconds" /> seconds</td>
+                </tr>
+            </table>
+            <br />
+            <button @onclick="SaveSettings">Save to Cache</button>
+            <button @onclick="CloseAdminModal">Close</button>
+        </div>
+    </div>
+}
+
 @{#region Footer / Admin Panel}
 <footer class="chat-footer">
     <div class="footer-menu">
-        <button @onclick="() => showAdminPanel = false" class="menu-button">Chatters</button>
-        <button @onclick="() => showAdminPanel = true" class="menu-button">Admin Panel</button>
+        <button @onclick="OpenAdminModal" class="menu-button">Open Admin Panel</button>
     </div>
-
-    @if (!showAdminPanel)
-    {
-        <h5>Active Chatters:</h5>
-        <div class="chatter-box">
-            @if (ChatService.ActiveChatters.Count == 0)
+    <h5>Active Chatters:</h5>
+    <div class="chatter-box">
+        @if (ChatService.ActiveChatters.Count == 0)
+        {
+            <p>- none</p>
+        }
+        else
+        {
+            @foreach (var chatter in ChatService.ActiveChatters)
             {
-                <p>- none</p>
+                <p> - @chatter.Name</p>
             }
-            else
-            {
-                @foreach (var chatter in ChatService.ActiveChatters)
-                {
-                    <p> - @chatter.Name</p>
-                }
-            }
-        </div>
-    }
+        }
+    </div>
+<!--
     else
     {
         <h5>Admin Panel:</h5>
         <div class="admin-panel">
-            <button class="btn btn-primary" @onclick="RandomPokemon" disabled="@isCatching">Spawn Random Pokemon</button>
-            <button class="btn btn-secondary" @onclick="ToggleVisibility">Toggle Backgrounds</button>
-            <label># of Spawns before Raid:</label>
-            <input type="number" @bind="raidCountdownMax" min="1" />
-            <label>Raid Timer:</label>
-            <input type="number" @bind="raidTimer" min="1" />
-            <label>Catch Timer:</label>
-            <input type="number" @bind="catchTimer" min="1" />
-            <label>Time between Spawns:</label>
-            <input type="number" @bind="spawnTimer" min="1" />
-            <button @onclick="SaveSettings">Save to Cache</button>
+
         </div>
     }
+    -->
 </footer>
 @{#endregion}
 
@@ -209,12 +301,14 @@ else
     private string backgroundOffset = "0px";
     private string PokeballPosition = "0px 0px;";
     private Pokemon? currentPokemon;
+    private Pokemon? attackerPokemon;
     private bool isCatching = false;
     private bool isExiting = false;
     private bool isHidden = false;
     private bool isTrainerExiting = false;
     private bool isPokemon = false;
     private bool isSpawning = false;
+    private bool isAdminModalOpen = false;
     private string CurrentPokemonDisplay = "none;";
     private string CurrentPokeballDisplay = "none;";
     private Chatter? winner;
@@ -327,12 +421,14 @@ else
             {
                 Console.ForegroundColor = ConsoleColor.Red;
                 Console.WriteLine($"[ERROR] Sync failed!\n{ex.Message}");
+                Console.ResetColor();
             }
         }
         catch (Exception ex)
         {
             Console.ForegroundColor = ConsoleColor.Red;
             Console.WriteLine($"[ERROR] Copy failed!\n{ex.Message}");
+            Console.ResetColor();
         }
     }
 
@@ -342,6 +438,7 @@ else
         Console.WriteLine($"[INFO] Syncing to server...");
         string filePath = $"{AuthService.GetChannelName()}.db";
         string tempFilePath = $"{filePath}.copy";
+        Console.ResetColor();
 
         try
         {
@@ -366,17 +463,20 @@ else
             {
                 Console.ForegroundColor = ConsoleColor.Red;
                 Console.WriteLine($"[ERROR] Sync failed!\n{response.StatusCode}");
+                Console.ResetColor();
             }
             else
             {
                 Console.ForegroundColor = ConsoleColor.Green;
                 Console.WriteLine($"[INFO] Sync successful.");
+                Console.ResetColor();
             }
         }
         catch (Exception ex)
         {
             Console.ForegroundColor = ConsoleColor.Red;
             Console.WriteLine($"[ERROR] Sync failed!\n{ex.Message}");
+            Console.ResetColor();
         }
         finally
         {
@@ -453,6 +553,26 @@ else
         return $"{calculatedWidth}px";
     }
 
+    private string GetAttackerHealthWidth()
+    {
+        if (attackerPokemon == null) return "0px";
+        double healthPercentage = (double)attackerPokemon.CurrentHP / attackerPokemon.MaxHP;
+        int maxWidth = 48;
+        int calculatedWidth = (int)(maxWidth * healthPercentage);
+        return $"{calculatedWidth}px";
+    }
+
+
+    private void OpenAdminModal()
+    {
+        isAdminModalOpen = true;
+    }
+
+    private void CloseAdminModal()
+    {
+        isAdminModalOpen = false;
+    }
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
@@ -511,6 +631,10 @@ else
         RedeemService.RandomPkmnRedeem += InvokeRandomPokemon;
         ChatService.ThrowOutPokemon -= InvokeSpecificPokemon;
         ChatService.ThrowOutPokemon += InvokeSpecificPokemon;
+        ChatService.InvokeRemovePokemon -= InvokeRemovePokemon;
+        ChatService.InvokeRemovePokemon += InvokeRemovePokemon;
+        ChatService.SetAttackingPokemon -= InvokeSetAttackerPokemon;
+        ChatService.SetAttackingPokemon += InvokeSetAttackerPokemon;
     }
 
     private async Task SaveSettings()
@@ -574,13 +698,28 @@ else
         });
     }
 
-    private async Task InvokeSpecificPokemon(Pokemon p)
+    private async Task InvokeRemovePokemon()
     {
         await InvokeAsync(async () =>
         {
-            await SpecificPokemon(p);
+            await RemovePokemon();
         });
     }
+
+    private async Task InvokeSpecificPokemon(Pokemon p, bool DoNotCatch)
+    {
+        await InvokeAsync(async () =>
+        {
+            await SpecificPokemon(p, DoNotCatch);
+        });
+    }
+
+    public async Task InvokeSetAttackerPokemon(Pokemon p)
+    {
+        attackerPokemon = p;
+        await InvokeAsync(StateHasChanged);
+    }
+
 
     // only use for updating trainer -> pokemon, NOT the other way around!
     private async Task UpdateTrainerSprite(string newSpriteUrl, string newCry)
@@ -595,7 +734,7 @@ else
         TrainerIndex = 69420; // lol
         await UpdateUI();
         await JS.InvokeVoidAsync("PlayAudio", "attackerscry");
-        if(!BattleService.IsRaidActive)
+        if(!BattleService.IsRaidActive && !BattleService.IsPvP)
         {
             await Task.Delay(2000);
             isTrainerExiting = true;
@@ -629,10 +768,19 @@ else
         return $"-{col * 86}px -{row * 128}px";
     }
 
+    private string GetTrainerSpritePosition(int index)
+    {
+        int row = index / 8;
+        int col = index % 8;
+        return $"-{col * 86}px -{row * 128}px";
+    }
+
+
     #region Pokemon Generators
     private async Task RandomRaid()
     {
         if (isCatching) return;
+        if (BattleService.IsPvP) return;
         timerMessage = "";
         isCatching = true;
         isTrainerExiting = false;
@@ -719,16 +867,18 @@ else
         await UpdateUI();
     }
 
-    private async Task SpecificPokemon(Pokemon p)
+    private async Task SpecificPokemon(Pokemon p, bool DoNotCatch = false)
     {
         if (isCatching) return;
-        await Task.Delay(1500);
+        if(currentPokemon is not null) HidePokemonDisplay(currentPokemon);
         isCatching = true;
         isTrainerExiting = false;
+        isExiting = false;
         p.Heal(p.MaxHP);
         currentPokemon = p;
         ChatService.cs_currentPokemon = currentPokemon;
         string message = $"\n";
+        if(BattleService.IsPvP) timerMessage = "";
         extraMessage = new MarkupString($"{message.Replace("\n", "<br />")}");
         if (currentPokemon == null)
         {
@@ -741,19 +891,25 @@ else
         await UpdateUI();
         await JS.InvokeVoidAsync("PlayAudio", "cry");
 
-        if (!string.IsNullOrEmpty(currentPokemon.Name))
+        ShowPokemonDisplay(currentPokemon);
+        await UpdateUI();
+
+        if (!string.IsNullOrEmpty(currentPokemon.Name) && DoNotCatch == false)
         {
             ChatService.SendAlert($"A wild {CultureInfo.InvariantCulture.TextInfo.ToTitleCase(currentPokemon.Name)} appeared! Commands: !catch | !attack | !catchattack");
-            ShowPokemonDisplay(currentPokemon);
             await UpdateUI();
             await StartCatchTimer();
         }
-        else await RemovePokemon();
+        else
+        {
+            if (!BattleService.IsPvP) await RemovePokemon();
+        }
     }
 
     private async Task RandomPokemon()
     {
         if (isCatching) return;
+        if (BattleService.IsPvP) return;
         if(raidCountdown == 0)
         {
             await RandomRaid();
@@ -1032,17 +1188,20 @@ else
         await UpdateUI();
         await Task.Delay(800);
 
-        if (currentPokemon != null)
-        {
-            HidePokemonDisplay(currentPokemon);
-            currentPokemon = null;
-        }
-        ChatService.cs_currentPokemon = null;
         isExiting = false;
         isCatching = false;
         TrainerIndex = -1;
-        if (raidCountdown == 3) ChatService.SendAlert($"A powerful Pokemon is heard in the distance!");
-        else if(raidCountdown == 1) ChatService.SendAlert($"A powerful Pokemon is getting close!");
+        if(!BattleService.IsPvP)
+        {
+            if (currentPokemon != null)
+            {
+                HidePokemonDisplay(currentPokemon);
+                currentPokemon = null;
+            }
+            ChatService.cs_currentPokemon = null;
+            if (raidCountdown == 3) ChatService.SendAlert($"A powerful Pokemon is heard in the distance!");
+            else if (raidCountdown == 1) ChatService.SendAlert($"A powerful Pokemon is getting close!");
+        }
         await UpdateUI();
     }
 

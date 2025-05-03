@@ -20,7 +20,9 @@ namespace VeCatch.Services
         public event Func<string, string, Task>? OnTrainerSpriteChanged;
         public event Func<Chatter, Task>? OnCatchCommandReceived;
         public event Action<string, string>? OnChatMessageReceived;
-        public event Func<Pokemon, Task>? ThrowOutPokemon;
+        public event Func<Pokemon, bool, Task>? ThrowOutPokemon;
+        public event Func<Pokemon, Task>? SetAttackingPokemon;
+        public event Func<Task>? InvokeRemovePokemon;
         public bool CONNECTED = false;
         public Pokemon? cs_currentPokemon = null;
         private readonly SemaphoreSlim _raidLock = new(1, 1);
@@ -154,6 +156,7 @@ namespace VeCatch.Services
 
                         attacker.CurrentHP = attacker.MaxHP;
 
+                        if(SetAttackingPokemon is not null) await SetAttackingPokemon(attacker);
                         ChangeSprite(attacker);
                         await Task.Delay(2000);
 
@@ -270,9 +273,126 @@ namespace VeCatch.Services
                 await ChatUpdateMessage.Invoke(new MarkupString(""));
             }
         }
+        private async Task<List<Pokemon>> LoadTeam(Trainer trainer)
+        {
+            var team = new List<Pokemon>();
+            var slots = new[] { trainer.Team1, trainer.Team2, trainer.Team3, trainer.Team4, trainer.Team5, trainer.Team6 };
+
+            foreach (var name in slots)
+            {
+                if (string.IsNullOrWhiteSpace(name)) continue;
+                bool shiny = await _trainerService.IsShinyByName(trainer, name);
+                var mon = await _trainerService.GetPokemonFromDb(name, trainer, shiny);
+                if (mon != null)
+                {
+                    mon.Heal(mon.MaxHP);
+                    team.Add(mon);
+                }
+            }
+
+            return team;
+        }
+
+        private async Task RunPvPBattle()
+        {
+            var attacker = _battleService.PvPChallenger;
+            var defender = _battleService.PvPOpponent;
+
+            if (attacker is null || defender is null) return;
+
+            var attackerTeam = await LoadTeam(attacker);
+            var defenderTeam = await LoadTeam(defender);
+
+            int atkIndex = 0;
+            int defIndex = 0;
+
+            Pokemon? currentAttacker = null;
+            Pokemon? currentDefender = null;
+
+            while (atkIndex < attackerTeam.Count && defIndex < defenderTeam.Count)
+            {
+                sentOutMonFainted = false;
+
+                var atkMon = attackerTeam[atkIndex];
+                var defMon = defenderTeam[defIndex];
+
+                if (ThrowOutPokemon is null) return;
+
+                if(defMon != currentDefender)
+                {
+                    currentDefender = defMon;
+                    await ThrowOutPokemon.Invoke(defMon, true);
+                    await Task.Delay(500);
+                    await OnChatUpdateMessage($"{defender.Name} sent out {CultureInfo.InvariantCulture.TextInfo.ToTitleCase(defMon.Name)}!");
+                    await Task.Delay(1500);
+                }
+
+                if(atkMon != currentAttacker)
+                {
+                    currentAttacker = atkMon;
+                    ChangeSprite(atkMon);
+                    await OnChatUpdateMessage($"{attacker.Name} sent out {CultureInfo.InvariantCulture.TextInfo.ToTitleCase(atkMon.Name)}!");
+                    await Task.Delay(2000);
+                }
+
+                while (atkMon.CurrentHP > 0 && defMon.CurrentHP > 0)
+                {
+                    if(atkMon.CurrentHP > 0)
+                    {
+                        _battleService.AttackPokemon(atkMon, defMon);
+                        await Task.Delay(750);
+                    }
+
+                    if (defMon.CurrentHP > 0)
+                    {
+                        _battleService.AttackPokemon(defMon, atkMon);
+                        await Task.Delay(750);
+                    }
+
+                    if (atkMon.CurrentHP <= 0)
+                    {
+                        await OnChatUpdateMessage($"{attacker.Name}'s {CultureInfo.InvariantCulture.TextInfo.ToTitleCase(atkMon.Name)} fainted!");
+                        sentOutMonFainted = true;
+                        atkIndex++;
+                        break;
+                    }
+
+                    if (defMon.CurrentHP <= 0)
+                    {
+                        await OnChatUpdateMessage($"{defender.Name}'s {CultureInfo.InvariantCulture.TextInfo.ToTitleCase(defMon.Name)} fainted!");
+                        if (InvokeRemovePokemon is not null) await InvokeRemovePokemon();
+                        defIndex++;
+                        break;
+                    }
+                }
+
+                await Task.Delay(100);
+            }
+
+            string result;
+            if (atkIndex >= attackerTeam.Count && defIndex >= defenderTeam.Count)
+                result = "It's a tie!";
+            else if (atkIndex >= attackerTeam.Count)
+                result = $"{defender.Name} wins the PvP battle!";
+            else
+                result = $"{attacker.Name} wins the PvP battle!";
+
+            SendAlert(result);
+            await OnChatUpdateMessage(result);
+            await Task.Delay(500);
+            _battleService.IsPvP = false;
+            _battleService.PvPChallenger = null;
+            _battleService.PvPOpponent = null;
+            cs_currentPokemon = null;
+            if(InvokeRemovePokemon is not null) await InvokeRemovePokemon.Invoke();
+        }
+
+
+
         public void ChangeSprite(Pokemon p)
         {
             if (p == null || p.SpriteUrl == null || p.Cry == null) return;
+            if (SetAttackingPokemon is not null) _ = SetAttackingPokemon.Invoke(p);
             OnTrainerSpriteChanged?.Invoke(p.SpriteUrl, p.Cry);
         }
         private static string CleanArg(string input)
@@ -362,8 +482,12 @@ namespace VeCatch.Services
                         if (_battleService.Attackers.Contains(chatter.Name))
                             return;
 
+                        if (_battleService.IsPvP) return;
+
                         if (cs_currentPokemon == null)
                             break;
+
+                        if (_battleService.IsRaidActive) return;
 
                         await using var db = await _dbContextFactory.CreateDbContextAsync();
                         var trainer = await db.Trainers
@@ -439,6 +563,8 @@ namespace VeCatch.Services
                 #endregion
                 #region !catch
                 case "!catch":
+                    if (_battleService.IsRaidActive) return;
+                    if (_battleService.IsPvP) return;
                     await (OnCatchCommandReceived?.Invoke(chatter) ?? Task.CompletedTask);
                     break;
                 #endregion
@@ -588,10 +714,61 @@ namespace VeCatch.Services
                             await db.SaveChangesAsync();
 
                             await OnChatUpdateMessage($"{trainer.Name} released {CultureInfo.InvariantCulture.TextInfo.ToTitleCase(pokemon.Name)} back into the wild!");
-                            await ThrowOutPokemon.Invoke(caughtEntry);
+                            await ThrowOutPokemon.Invoke(caughtEntry, false);
                         }
                     }
                     break;
+                #endregion
+                #region !challenge
+                case "!challenge":
+                    {
+                        if (args?.Length != 1)
+                        {
+                            SendAlert($"{chatter.Name}, usage: !challenge [opponentName]");
+                            break;
+                        }
+
+                        string opponentName = args[0];
+                        if (string.Equals(opponentName, chatter.Name, StringComparison.OrdinalIgnoreCase))
+                        {
+                            SendAlert($"{chatter.Name}, you can't challenge yourself!");
+                            break;
+                        }
+
+                        await using var db = await _dbContextFactory.CreateDbContextAsync();
+                        var challenger = await db.Trainers.FirstOrDefaultAsync(t => t.Name == chatter.Name);
+                        var opponent = await db.Trainers.FirstOrDefaultAsync(t => t.Name == opponentName);
+
+                        if (challenger == null || opponent == null)
+                        {
+                            SendAlert($"{chatter.Name}, one or both trainers were not found.");
+                            break;
+                        }
+
+                        _battleService.IsPvP = true;
+                        _battleService.PvPChallenger = challenger;
+                        _battleService.PvPOpponent = opponent;
+
+                        SendAlert($"{chatter.Name} has challenged {opponentName} to a Pokémon battle!");
+
+                        var opponentTeam = new[] { opponent.Team1, opponent.Team2, opponent.Team3, opponent.Team4, opponent.Team5, opponent.Team6 };
+                        string? firstMonName = opponentTeam.FirstOrDefault(n => !string.IsNullOrWhiteSpace(n));
+                        if (firstMonName == null)
+                        {
+                            SendAlert($"{opponentName} has no valid Pokémon on their team!");
+                            break;
+                        }
+
+                        bool isShiny = await _trainerService.IsShinyByName(opponent, firstMonName);
+                        var opponentMon = await _trainerService.GetPokemonFromDb(firstMonName, opponent, isShiny);
+                        if (opponentMon == null)
+                        {
+                            SendAlert($"{opponentName}'s Pokémon {firstMonName} could not be loaded!");
+                            break;
+                        }
+                        await RunPvPBattle();
+                        break;
+                    }
                 #endregion
                 #region !stats
                 case "!stats":
@@ -725,6 +902,8 @@ namespace VeCatch.Services
                 #endregion
                 #region !attack
                 case "!attack":
+                    if (_battleService.IsRaidActive) return;
+                    if (_battleService.IsPvP) return;
                     if (args?.Length == 1)
                     {
                         if (_battleService.Attackers.Exists(name => name == chatter.Name))

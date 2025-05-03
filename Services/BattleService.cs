@@ -9,6 +9,9 @@ namespace VeCatch.Services
         public List<string> Attackers = new List<string>();
         public bool IsRaidActive { get; private set; } = false;
         public bool IsAttacking = false;
+        public bool IsPvP { get; set; } = false;
+        public Trainer? PvPChallenger { get; set; }
+        public Trainer? PvPOpponent { get; set; }
         public event Func<MarkupString, Task>? UpdateMessage;
         public async Task OnUpdateMessage(string s)
         {

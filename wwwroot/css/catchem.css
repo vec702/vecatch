@@ -3,43 +3,35 @@
     src: local('PKMN RBYGSC'), url('PKMN RBYGSC.ttf') format('truetype') !important;
 }
 
-/*.battle-container {
-    position: relative;
-    margin: 20px auto;
-    height: 100%;
-    width: 100%;
-    max-width: 100%;
-    overflow: hidden;
-    transform: scale(1.5);
-    transform-origin: top left;
-    margin-left: -25%;
-}*/
-
 .battle-container {
     position: relative;
-    transform: scale(1.5);
+    transform: scale(1.66);
     margin: 20px auto;
-    transform-origin: top left;
+    transform-origin: center;
     margin-left: 0;
-    width: calc(100vw / 1.633);
+    top: 64px;
+    left: -28px;
+    width: 100vw;
     overflow: hidden;
     font-family: 'PKMN RBYGSC', sans-serif !important;
 }
-
 
 .messages p {
     position: relative;
     font-family: 'PKMN RBYGSC', sans-serif !important;
     font-size: 11px;
     font-weight: bold;
-    left: -40px;
+    width: 100%;
+    text-align: center;
     top: -4px;
 }
 
 .messages p2 {
     position: relative;
     font-family: 'PKMN RBYGSC', sans-serif !important;
-    left: -40px;
+    /*left: -44px;*/
+    width: 100%;
+    text-align: center;
     font-size: 9px;
     font-weight: bold;
     top: -48px;
@@ -118,6 +110,35 @@
     left: 0;
     width: 134px;
     height: 16px;
+}
+
+.attacker-health-container {
+    position: absolute;
+    bottom: 28px;
+    left: 18px;
+    width: 67px;
+    height: 8px;
+    z-index: 5;
+    transform: scale(0.9);
+    transform-origin: left center;
+}
+
+.attacker-health-bar-background {
+    width: 48px;
+    height: 4px;
+    display: block;
+    position: relative;
+    left: 17px;
+    bottom: -6px;
+    z-index: 5;
+}
+
+.attacker-health-bar-foreground {
+    width: 100%;
+    height: 100%;
+    display: block;
+    position: relative;
+    z-index: 6;
 }
 
 .pokemon-sprite.exit {
@@ -327,18 +348,18 @@
     scrollbar-color: #888 #444;
 }
 
-    .chatter-box::-webkit-scrollbar {
-        width: 8px;
-    }
+.chatter-box::-webkit-scrollbar {
+    width: 8px;
+}
 
-    .chatter-box::-webkit-scrollbar-thumb {
-        background: #888;
-        border-radius: 4px;
-    }
+.chatter-box::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 4px;
+}
 
-    .chatter-box::-webkit-scrollbar-track {
-        background: #444;
-    }
+.chatter-box::-webkit-scrollbar-track {
+    background: #444;
+}
 
 .footer-menu {
     display: flex;
@@ -357,9 +378,9 @@
     font-size: 12px;
 }
 
-    .menu-button:hover {
-        background: #666;
-    }
+.menu-button:hover {
+    background: #666;
+}
 
 .admin-panel {
     max-height: 128px;
