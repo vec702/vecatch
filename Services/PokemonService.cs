@@ -13,14 +13,13 @@ namespace VeCatch.Services
     {
         private readonly Random _random = new();
         private readonly IDbContextFactory<DatabaseInfo> _dbContextFactory;
-        private readonly ChatService _chatService;
         private readonly BattleService _battleService;
         private readonly AuthService _authService;
+        public int shinyMaxChance = 4096;
 
-        public PokemonService(IDbContextFactory<DatabaseInfo> dbContextFactory, ChatService chatService, BattleService battleService, AuthService authService)
+        public PokemonService(IDbContextFactory<DatabaseInfo> dbContextFactory, BattleService battleService, AuthService authService)
         {
             _dbContextFactory = dbContextFactory;
-            _chatService = chatService;
             _battleService = battleService;
             _authService = authService;
         }
@@ -62,10 +61,13 @@ namespace VeCatch.Services
 
             _battleService.Attackers = new List<string>();
 
-            int ShinyChance = new Random().Next(1, 481);
-            bool IsShiny = ShinyChance == 256 ? true : false;
-
+            bool IsShiny = new Random().Next(0, shinyMaxChance) == 0;
             return await Pokedex.GetPokemonFromDbAsync(selectedPokedex, IsShiny);
+        }
+
+        public async Task<Pokemon?> GetPokemonByNameAsync(string name, bool IsShiny = false)
+        {
+            return await Pokedex.GetPokemonFromDbByNameAsync(name, IsShiny);
         }
 
         public async Task<Pokemon?> GenerateRandomRaidPokemon()
@@ -87,9 +89,7 @@ namespace VeCatch.Services
 
             _battleService.Attackers = new List<string>();
 
-            int ShinyChance = new Random().Next(1, 513);
-            bool IsShiny = ShinyChance == 256 ? true : false;
-
+            bool IsShiny = new Random().Next(0, shinyMaxChance) == 0;
             return await Pokedex.GetPokemonFromDbAsync(selectedPokedex, IsShiny);
         }
 

@@ -3,6 +3,12 @@
     src: local('PKMN RBYGSC'), url('PKMN RBYGSC.ttf') format('truetype') !important;
 }
 
+html, body {
+    max-width: 100%;
+    overflow-y: hidden;
+    overflow-x: hidden;
+}
+
 .battle-container {
     position: relative;
     transform: scale(1.66);
@@ -29,7 +35,6 @@
 .messages p2 {
     position: relative;
     font-family: 'PKMN RBYGSC', sans-serif !important;
-    /*left: -44px;*/
     width: 100%;
     text-align: center;
     font-size: 9px;
@@ -78,6 +83,7 @@
     width: 384px;
     height: 180px;
     margin: 20px auto;
+    z-index: 3;
 }
 
 .health-bar-container {
@@ -98,10 +104,11 @@
 .health-bar-background {
     position: absolute;
     left: 34px;
-    bottom: 5px;
+    bottom: 4.5px;
     width: 100%;
+    height: 100%;
     max-width: 96px;
-    max-height: 6px;
+    max-height: 8px;
 }
 
 .health-bar-foreground {
@@ -110,6 +117,7 @@
     left: 0;
     width: 134px;
     height: 16px;
+    z-index: 5;
 }
 
 .attacker-health-container {
@@ -125,7 +133,7 @@
 
 .attacker-health-bar-background {
     width: 48px;
-    height: 4px;
+    height: 4.5px;
     display: block;
     position: relative;
     left: 17px;
@@ -138,7 +146,7 @@
     height: 100%;
     display: block;
     position: relative;
-    z-index: 6;
+    z-index: 7;
 }
 
 .pokemon-sprite.exit {
@@ -321,6 +329,27 @@
     }
 }
 
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0,0,0,0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.modal-content {
+    background-color: white;
+    padding: 2rem;
+    border-radius: 10px;
+    max-width: 600px;
+    width: 90%;
+    box-shadow: 0 0 15px rgba(0,0,0,0.3);
+}
 
 .chat-footer {
     position: fixed;

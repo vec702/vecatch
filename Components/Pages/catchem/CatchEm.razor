@@ -24,28 +24,6 @@
 
 @{#region CSS Style}
 <style>
-    .modal-overlay {
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background-color: rgba(0,0,0,0.6);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 1000;
-    }
-
-    .modal-content {
-        background-color: white;
-        padding: 2rem;
-        border-radius: 10px;
-        max-width: 600px;
-        width: 90%;
-        box-shadow: 0 0 15px rgba(0,0,0,0.3);
-    }
-
     .trainer-sprite {
         position: absolute;
         bottom: 0;
@@ -90,34 +68,34 @@
 
     .health-bar-fill {
         position: absolute;
-        left: 34px;
-        bottom: 5px;
-        max-width: 96px;
-        max-height: 6px;
+        left: 33px;
+        bottom: 4.5px;
+        max-width: 97px;
+        max-height: 7px;
         height: 100%;
         background: url("images/healthbar/fill.PNG") no-repeat center/cover;
         -webkit-mask-image: url("images/healthbar/mask.PNG");
         -webkit-mask-size: cover;
         mask-image: url("images/healthbar/mask.PNG");
         mask-size: cover;
-        z-index: 5;
+        z-index: 4;
         transition: width 0.3s ease-in-out;
     }
 
     .attacker-health-fill {
         position: absolute;
         left: 17px;
-        bottom: -1.5px;
+        bottom: -3px;
         width: 48px;
         max-width: 48px;
-        max-height: 3px;
+        max-height: 4px;
         height: 100%;
         background: url("images/healthbar/fill.PNG") no-repeat center/cover;
         -webkit-mask-image: url("images/healthbar/mask.PNG");
         -webkit-mask-size: cover;
         mask-image: url("images/healthbar/mask.PNG");
         mask-size: cover;
-        z-index: 7;
+        z-index: 6;
         transition: width 0.3s ease-in-out;
     }
 </style>
@@ -139,7 +117,7 @@
         <div class="background @(isHidden ? "hidden" : "")" style="background-image: url(@backgroundStyle); background-position-x: @backgroundOffset;"></div>
         <div class="plot @(isHidden ? "hidden" : "")" style="background-image: url(@plotStyle); background-position-x: @backgroundOffset;"></div>
         <div class="pokemon-container">
-            <img class="pokemon-sprite @(isExiting ? "exit" : "")" src="@currentPokemon.SpriteUrl" />
+            <img class="pokemon-sprite @(isExiting ? "exit" : "")" src="@(currentPokemon.Name.StartsWith("✨") ? @currentPokemon.ShinySprite : @currentPokemon.DefaultSprite)" />
             <div class="pokeball-sprite @pokeballAnimation"></div>
         </div>
         @if (BattleService.IsPvP && BattleService.PvPChallenger is not null) // PVP Battle Container
@@ -184,7 +162,7 @@
             <center><h4>@CultureInfo.InvariantCulture.TextInfo.ToTitleCase(currentPokemon.Name)</h4></center>
             <div class="health-bar-container">
                 <img src="images/healthbar/background.PNG" class="health-bar-background" />
-                <div class="health-bar-fill" style="max-width: 96px; width: @GetHealthWidth();"></div>
+                <div class="health-bar-fill" style="width: @GetHealthWidth();"></div>
                 <img src="images/healthbar/foreground.PNG" class="health-bar-foreground" />
             </div>
         }
@@ -241,11 +219,15 @@ else
             <br />
             <table>
                 <tr>
-                    <td><label># of Spawns before Raid:</label></td>
-                    <td><input type="number" @bind="raidCountdownMax" min="1" placeholder="in # of spawns" /> spawns</td>
+                    <td><label>Shiny Chance:</label></td>
+                    <td><input type="number" @bind="PokemonService.shinyMaxChance" min="1" placeholder="in whole number (1 in X chance)" /> (@((100.0 / (PokemonService.shinyMaxChance <= 0 ? 1 : PokemonService.shinyMaxChance)).ToString("0.000"))%)</td>
                 </tr>
                 <tr>
-                    <td><label>Raid Timer:</label></td>
+                    <td><label>Spawns to Next Raid:</label></td>
+                    <td><input type="number" @bind="raidCountdownMax" min="0" placeholder="in # of spawns" /> spawns</td>
+                </tr>
+                <tr>
+                    <td><label>Raid Duration:</label></td>
                     <td><input type="number" @bind="raidTimer" min="1" placeholder="in seconds" /> seconds</td>
                 </tr>
                 <tr>
@@ -253,7 +235,7 @@ else
                     <td><input type="number" @bind="catchTimer" min="1" placeholder="in seconds" /> seconds</td>
                 </tr>
                 <tr>
-                    <td><label>Time between Spawns:</label></td>
+                    <td><label>Spawn Interval:</label></td>
                     <td><input type="number" @bind="spawnTimer" min="1" placeholder="in seconds" /> seconds</td>
                 </tr>
             </table>
@@ -283,15 +265,6 @@ else
             }
         }
     </div>
-<!--
-    else
-    {
-        <h5>Admin Panel:</h5>
-        <div class="admin-panel">
-
-        </div>
-    }
-    -->
 </footer>
 @{#endregion}
 
@@ -319,7 +292,6 @@ else
     private string plotStyle = "";
     private Trainer currentTrainer = new Trainer();
     private int TrainerIndex = -1;
-    private bool showAdminPanel = false;
     public string trainerSpriteUrl = "";
     private List<Chatter> Catchers = new List<Chatter>();
     private int raidCountdown = 10; // in spawns
@@ -548,7 +520,7 @@ else
         if (currentPokemon == null) return "0px";
         if (ChatService.cs_currentPokemon == null) return "0px";
         double healthPercentage = (double)currentPokemon.CurrentHP / currentPokemon.MaxHP;
-        int maxWidth = 96;
+        int maxWidth = 97;
         int calculatedWidth = (int)(maxWidth * healthPercentage);
         return $"{calculatedWidth}px";
     }
@@ -590,6 +562,7 @@ else
                         raidTimer = settings.GetValueOrDefault("raidTimer", raidTimer);
                         catchTimer = settings.GetValueOrDefault("catchTimer", catchTimer);
                         spawnTimer = settings.GetValueOrDefault("spawnTimer", spawnTimer);
+                        PokemonService.shinyMaxChance = settings.GetValueOrDefault("shinyMaxChance", PokemonService.shinyMaxChance);
                         raidCountdown = raidCountdownMax;
                         await UpdateUI();
                     }
@@ -627,14 +600,16 @@ else
         BattleService.UpdateMessage += InvokeMessage;
         ChatService.ChatUpdateMessage -= InvokeMessageChat;
         ChatService.ChatUpdateMessage += InvokeMessageChat;
-        RedeemService.RandomPkmnRedeem -= InvokeRandomPokemon;
-        RedeemService.RandomPkmnRedeem += InvokeRandomPokemon;
         ChatService.ThrowOutPokemon -= InvokeSpecificPokemon;
         ChatService.ThrowOutPokemon += InvokeSpecificPokemon;
         ChatService.InvokeRemovePokemon -= InvokeRemovePokemon;
         ChatService.InvokeRemovePokemon += InvokeRemovePokemon;
         ChatService.SetAttackingPokemon -= InvokeSetAttackerPokemon;
         ChatService.SetAttackingPokemon += InvokeSetAttackerPokemon;
+        RedeemService.RandomPkmnRedeem -= InvokeRandomPokemon;
+        RedeemService.RandomPkmnRedeem += InvokeRandomPokemon;
+        ChatService.InvokeRandomPokemon -= InvokeRandomPokemon;
+        ChatService.InvokeRandomPokemon += InvokeRandomPokemon;
     }
 
     private async Task SaveSettings()
@@ -644,7 +619,8 @@ else
             { "raidCountdownMax", raidCountdownMax },
             { "raidTimer", raidTimer },
             { "catchTimer", catchTimer },
-            { "spawnTimer", spawnTimer }
+            { "spawnTimer", spawnTimer },
+            { "shinyMaxChance", PokemonService.shinyMaxChance }
         };
 
         await JS.InvokeVoidAsync("saveTimers", settings);
@@ -781,6 +757,7 @@ else
     {
         if (isCatching) return;
         if (BattleService.IsPvP) return;
+        if (raidCountdownMax == 0) return;
         timerMessage = "";
         isCatching = true;
         isTrainerExiting = false;
@@ -793,7 +770,7 @@ else
             return;
         }
 
-        currentPokemon.MaxHP *= (int)3.5;
+        currentPokemon.MaxHP *= (int)5.5;
         currentPokemon.CurrentHP = currentPokemon.MaxHP;
 
         currentPokemon.Attack = (int)(currentPokemon.Attack * 1.5);
@@ -830,27 +807,17 @@ else
             {
                 BattleService.EndRaid();
                 if (currentPokemon == null) break;
-                Pokemon pokeToSpawn = new Pokemon
-                    {
-                        Name = currentPokemon.Name,
-                        NationalDexNo = currentPokemon.NationalDexNo,
-                        CurrentHP = currentPokemon.MaxHP,
-                        MaxHP = currentPokemon.MaxHP,
-                        Attack = currentPokemon.Attack,
-                        Defense = currentPokemon.Defense,
-                        SpecialAttack = currentPokemon.SpecialAttack,
-                        SpecialDefense = currentPokemon.SpecialDefense,
-                        Speed = currentPokemon.Speed,
-                        CatchRate = currentPokemon.CatchRate,
-                        SpriteUrl = currentPokemon.SpriteUrl,
-                        Type1 = currentPokemon.Type1,
-                        Type2 = currentPokemon.Type2,
-                        Cry = currentPokemon.Cry
-                    };
+                bool isShiny = false;
+                if (currentPokemon.Name.StartsWith("✨"))
+                {
+                    isShiny = true;
+                    currentPokemon.Name = TrainerService.CleanPokemonName(currentPokemon.Name);
+                }
+                Pokemon? pokeToSpawn = await PokemonService.GetPokemonByNameAsync(currentPokemon.Name, isShiny);
                 await RemovePokemon();
                 await UpdateUI();
                 await Task.Delay(3000);
-                await SpecificPokemon(pokeToSpawn);
+                if(pokeToSpawn is not null) await SpecificPokemon(pokeToSpawn);
             }
         }
 

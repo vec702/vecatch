@@ -27,11 +27,13 @@ namespace VeCatch.Services
         public void StartRaid()
         {
             IsRaidActive = true;
+            Attackers = new List<string>();
         }
 
         public void EndRaid()
         {
             IsRaidActive = false;
+            Attackers = new List<string>();
         }
 
         public async void AttackPokemon(Pokemon Attacker, Pokemon Target)

@@ -83,7 +83,7 @@ namespace VeCatch.Services
             return caughtPokemon != null;
         }
 
-        private string CleanPokemonName(string name)
+        public string CleanPokemonName(string name)
         {
             name = name.Replace("Shiny ", "", StringComparison.OrdinalIgnoreCase);
             if (name.Contains("✨"))

@@ -23,6 +23,7 @@ namespace VeCatch.Services
         public event Func<Pokemon, bool, Task>? ThrowOutPokemon;
         public event Func<Pokemon, Task>? SetAttackingPokemon;
         public event Func<Task>? InvokeRemovePokemon;
+        public event Func<Task>? InvokeRandomPokemon;
         public bool CONNECTED = false;
         public Pokemon? cs_currentPokemon = null;
         private readonly SemaphoreSlim _raidLock = new(1, 1);
@@ -34,10 +35,11 @@ namespace VeCatch.Services
         private readonly IDbContextFactory<DatabaseInfo> _dbContextFactory;
         private readonly TrainerService _trainerService;
         private readonly BattleService _battleService;
+        private readonly PokemonService _pokemonService;
         public static bool sentOutMonFainted = false;
 
 
-        public ChatService(string channelName, IDbContextFactory<DatabaseInfo> dbContextFactory, TrainerService trainerService, BattleService battleService)
+        public ChatService(string channelName, IDbContextFactory<DatabaseInfo> dbContextFactory, TrainerService trainerService, BattleService battleService, PokemonService pokemonService)
         {
             _channelName = $"#{channelName}";
             _botUsername = channelName;
@@ -49,6 +51,7 @@ namespace VeCatch.Services
             cleanupTimer.Start();
             _trainerService = trainerService;
             _battleService = battleService;
+            _pokemonService = pokemonService;
         }
 
         public void SetAccessToken(string accessToken)
@@ -424,6 +427,48 @@ namespace VeCatch.Services
 
             switch (command.ToLower())
             {
+                // admin commands
+                #region !givepokemon
+                case "!givepokemon":
+                    if (!string.Equals(chatter.Name, _channelName?.Replace("#", ""), StringComparison.OrdinalIgnoreCase)) break;
+                    if (args?.Length >= 2)
+                    {
+                        if (string.IsNullOrEmpty(args[0]) || string.IsNullOrEmpty(args[1]))
+                        {
+                            SendAlert($"{chatter.Name}, usage: !givepokemon [pokémon name] [chatter name] [optional: shiny]");
+                            break;
+                        }
+
+                        await using var db = await _dbContextFactory.CreateDbContextAsync();
+                        Trainer? trainer = await db.Trainers.FirstOrDefaultAsync(t => t.Name == args[1]);
+                        if (trainer == null)
+                        {
+                            SendAlert($"{args[1]} doesn't have a trainer profile!");
+                            break;
+                        }
+                        Pokemon? pokemon = null;
+                        if (!string.IsNullOrEmpty(args[2]) && args[2].ToLower() == "shiny") {
+                            pokemon = await _pokemonService.GetPokemonByNameAsync(args[0], true);
+                        }
+                        else pokemon = await _pokemonService.GetPokemonByNameAsync(args[0], false);
+                        if (pokemon == null)
+                        {
+                            SendAlert($"\"{args[0]}\" is not a valid Pokémon!");
+                            break;
+                        }
+                        SendAlert($"{trainer.Name} has received a {pokemon.Name}!");
+                        await _pokemonService.SavePokemon(pokemon, trainer);
+                    }
+                    break;
+                #endregion
+                #region !superlure
+                case "!pokelure":
+                    if (!string.Equals(chatter.Name, _channelName?.Replace("#", ""), StringComparison.OrdinalIgnoreCase)) break;
+                    else if (InvokeRandomPokemon is not null) await InvokeRandomPokemon.Invoke();
+                    break;
+                #endregion
+
+                // user commands
                 #region !trainer
                 case "!trainer":
                     if (args?.Length == 1 && !string.IsNullOrEmpty(args[0]))
@@ -724,7 +769,7 @@ namespace VeCatch.Services
                     {
                         if (args?.Length != 1)
                         {
-                            SendAlert($"{chatter.Name}, usage: !challenge [opponentName]");
+                            SendAlert($"{chatter.Name}, usage: !challenge [opponent name]");
                             break;
                         }
 
@@ -774,7 +819,7 @@ namespace VeCatch.Services
                 case "!stats":
                     if (args?.Length == 1)
                     {
-                        Pokemon? p = await Pokedex.GetPokemonAsync(args[0].ToLower(), 50);
+                        Pokemon? p = await Pokedex.GetPokemonFromDbByNameAsync(args[0].ToLower());
                         if (p == null || p.ToString() == string.Empty)
                         {
                             SendAlert($"Look up failed! Could not find a Pokemon named: {args[0].ToLower()}");
@@ -935,7 +980,7 @@ namespace VeCatch.Services
                         }
                         await OnChatUpdateMessage($"{trainer.Name} sent out {CultureInfo.InvariantCulture.TextInfo.ToTitleCase(pokemon.Name)}!");
                         bool isShiny = await _trainerService.IsShiny(trainer, pokemon);
-                        var attacker = await Pokedex.GetPokemonAsync(pokemonName, 50, isShiny);
+                        var attacker = await Pokedex.GetPokemonFromDbByNameAsync(pokemonName, isShiny);
                         if (attacker == null)
                         {
                             break;
