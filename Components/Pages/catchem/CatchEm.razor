@@ -5,6 +5,7 @@
 @using VeCatch.Models
 @using Microsoft.EntityFrameworkCore
 @using System.Globalization
+@using System.Threading.Channels
 @inject ChatService ChatService
 @inject BattleService BattleService
 @inject PokemonService PokemonService
@@ -107,7 +108,7 @@
 
 @if (currentPokemon != null)
 {
-    #region Pokemon Battle Container
+    <!-- #region Pokemon Battle Container -->
     <audio id="attackerscry" src="@AttackersCry" />
     <audio id="throwing" src="sounds/rby/SFX_BALL_TOSS.wav" />
     <audio id="hit" src="sounds/rby/SFX_SWAP.wav" />
@@ -120,8 +121,9 @@
             <img class="pokemon-sprite @(isExiting ? "exit" : "")" src="@(currentPokemon.Name.StartsWith("✨") ? @currentPokemon.ShinySprite : @currentPokemon.DefaultSprite)" />
             <div class="pokeball-sprite @pokeballAnimation"></div>
         </div>
-        @if (BattleService.IsPvP && BattleService.PvPChallenger is not null) // PVP Battle Container
+        @if (BattleService.IsPvP && BattleService.PvPChallenger is not null)
         {
+            <!-- PVP Battle Container -->
             <div class="trainer-container">
                 <div class="trainer-sprite @(isPokemon ? "pokemon" : "") @(isTrainerExiting ? "exit" : "")" style="background: url('@trainerSpriteUrl'); @(isPokemon ? "" : $"background-position: {GetTrainerSpritePosition()};")">
                     <div class="trainer-name">@BattleService.PvPChallenger.Name</div>
@@ -138,8 +140,9 @@
                 </div>
             </div>
         }
-        else if (TrainerIndex != -1) // Non-PVP Battle Container
+        else if (TrainerIndex != -1) 
         {
+            <!-- Non-PVP Battle Container -->
             <div class="trainer-container">
                 <div class="trainer-sprite @(isPokemon ? "pokemon" : "") @(isTrainerExiting ? "exit" : "")" style="background: url('@trainerSpriteUrl'); @(isPokemon ? "" : $"background-position: {GetTrainerSpritePosition()};")">
                     <div class="trainer-name">@currentTrainer.Name</div>
@@ -157,7 +160,8 @@
             </div>
         }
 
-        @if (!string.IsNullOrEmpty(currentPokemon.Name)) // Defending Pokemon
+        <!-- Defending Pokemon Container -->
+        @if (!string.IsNullOrEmpty(currentPokemon.Name))
         {
             <center><h4>@CultureInfo.InvariantCulture.TextInfo.ToTitleCase(currentPokemon.Name)</h4></center>
             <div class="health-bar-container">
@@ -178,11 +182,11 @@
             <p2>@extraMessage</p2>
         </div>
     </center>
-    #endregion
+    <!-- #endregion Pokemon Battle Container -->
 }
 else
 {
-    #region Blank Battle Container
+    <!-- #region Blank Battle Container -->
     <div class="battle-container">
         <div class="pokemon-container">
             <img class="pokemon-sprite" src="" />
@@ -206,7 +210,7 @@ else
             <p></p>
         </div>
     </center>
-    #endregion
+    <!-- #endregion Blank Battle Container -->
 }
 
 @if (isAdminModalOpen)
@@ -215,7 +219,8 @@ else
         <div class="modal-content" @onclick:stopPropagation>
             <center><h2>Settings</h2></center>
             <button class="btn btn-primary" @onclick="RandomPokemon" disabled="@isCatching">Spawn Random Pokemon</button>
-            <button class="btn btn-secondary" @onclick="ToggleVisibility">@(isHidden ? "Display Background" : "Hide Background")</button>
+            <button class="btn btn-warning" @onclick="ToggleVisibility">@(isHidden ? "Display Background" : "Hide Background")</button>
+            <button class="btn btn-success" @onclick="ToggleChatMessages">@(ChatService.messagesEnabled ? "Disable Chat Msgs" : "Enable Chat Msgs")</button>
             <br />
             <table>
                 <tr>
@@ -229,6 +234,10 @@ else
                 <tr>
                     <td><label>Raid Duration:</label></td>
                     <td><input type="number" @bind="raidTimer" min="1" placeholder="in seconds" /> seconds</td>
+                </tr>
+                <tr>
+                    <td><label>Catch Multiplier:</label></td>
+                    <td><input type="number" @bind="catchMultiplier" min="1" placeholder="in whole number" /> x chance</td>
                 </tr>
                 <tr>
                     <td><label>Catch Timer:</label></td>
@@ -280,7 +289,6 @@ else
     private bool isHidden = false;
     private bool isTrainerExiting = false;
     private bool isPokemon = false;
-    private bool isSpawning = false;
     private bool isAdminModalOpen = false;
     private string CurrentPokemonDisplay = "none;";
     private string CurrentPokeballDisplay = "none;";
@@ -299,9 +307,53 @@ else
     private int raidTimer = 120; // in seconds
     private int catchTimer = 30; // in seconds
     private int spawnTimer = 300; // in seconds
+    private int catchMultiplier = 1; // in number
     private string AttackersCry = string.Empty;
     private Task? deathListenerTask;
     #endregion
+
+    private readonly Channel<Func<Task>> _actionQueue =
+        Channel.CreateUnbounded<Func<Task>>(new UnboundedChannelOptions
+            {
+                SingleReader = true,
+                SingleWriter = false
+            });
+
+    private bool _queueStarted = false;
+
+    private void EnsureQueueStarted()
+    {
+        if (_queueStarted) return;
+        _queueStarted = true;
+        _ = Task.Run(ProcessActionQueueAsync);
+    }
+
+    private void QueueAction(Func<Task> action)
+    {
+        EnsureQueueStarted();
+        _actionQueue.Writer.TryWrite(action);
+    }
+
+    private async Task ProcessActionQueueAsync()
+    {
+        var reader = _actionQueue.Reader;
+
+        while (await reader.WaitToReadAsync())
+        {
+            while (reader.TryRead(out var action))
+            {
+                try
+                {
+                    await action();
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[ActionQueue] Error while running action: {ex}");
+                }
+            }
+        }
+    }
+
 
     #region SQLite Code
     private void InitializeDatabase()
@@ -486,10 +538,10 @@ else
     }
     private void WaitForFileRelease(string filePath)
     {
-        int retries = 20;
-        int delay = 500;
+        int retries = 5;
+        int delay = 1000;
 
-        // at most try for 10 seconds
+        // at most try for 5 seconds
         for (int i = 0; i < retries; i++)
         {
             try
@@ -513,6 +565,11 @@ else
     private void ToggleVisibility()
     {
         isHidden = !isHidden;
+    }
+
+    private void ToggleChatMessages()
+    {
+        ChatService.messagesEnabled = !ChatService.messagesEnabled;
     }
 
     private string GetHealthWidth()
@@ -562,6 +619,7 @@ else
                         raidTimer = settings.GetValueOrDefault("raidTimer", raidTimer);
                         catchTimer = settings.GetValueOrDefault("catchTimer", catchTimer);
                         spawnTimer = settings.GetValueOrDefault("spawnTimer", spawnTimer);
+                        catchMultiplier = settings.GetValueOrDefault("catchMulti", catchMultiplier);
                         PokemonService.shinyMaxChance = settings.GetValueOrDefault("shinyMaxChance", PokemonService.shinyMaxChance);
                         raidCountdown = raidCountdownMax;
                         await UpdateUI();
@@ -620,7 +678,8 @@ else
             { "raidTimer", raidTimer },
             { "catchTimer", catchTimer },
             { "spawnTimer", spawnTimer },
-            { "shinyMaxChance", PokemonService.shinyMaxChance }
+            { "shinyMaxChance", PokemonService.shinyMaxChance },
+            { "catchMulti", catchMultiplier }
         };
 
         await JS.InvokeVoidAsync("saveTimers", settings);
@@ -628,15 +687,15 @@ else
 
     private async Task StartSpawnTimer()
     {
+        EnsureQueueStarted();
+
         while (true)
         {
-            if (isSpawning) return;
-            isSpawning = true;
             await Task.Delay(spawnTimer * 1000);
-            await RandomPokemon();
-            isSpawning = false;
+            QueueAction(RandomPokemon);
         }
     }
+
 
     #region Invokes
     private Task AddCatcher(Chatter chatter)
@@ -666,12 +725,10 @@ else
         });
     }
 
-    private async Task InvokeRandomPokemon()
+    private Task InvokeRandomPokemon()
     {
-        await InvokeAsync(async () =>
-        {
-            await RandomPokemon();
-        });
+        QueueAction(RandomPokemon);
+        return Task.CompletedTask;
     }
 
     private async Task InvokeRemovePokemon()
@@ -682,12 +739,10 @@ else
         });
     }
 
-    private async Task InvokeSpecificPokemon(Pokemon p, bool DoNotCatch)
+    private Task InvokeSpecificPokemon(Pokemon p, bool DoNotCatch)
     {
-        await InvokeAsync(async () =>
-        {
-            await SpecificPokemon(p, DoNotCatch);
-        });
+        QueueAction(() => SpecificPokemon(p, DoNotCatch));
+        return Task.CompletedTask;
     }
 
     public async Task InvokeSetAttackerPokemon(Pokemon p)
@@ -796,14 +851,26 @@ else
         }
         else await RemovePokemon();
 
+        deathListenerTask = DeathListener();
+        Pokemon? pokeToSpawn = null;
+
         for (int i = raidTimer; i > 0; i--)
         {
-            deathListenerTask = DeathListener();
             timerMessage = $"{i} second(s) remaining...";
             await UpdateUI();
             await Task.Delay(1000);
+        }
 
-            if(deathListenerTask.IsCompleted)
+        timerMessage = "";
+        await UpdateUI();
+
+        while (BattleService.IsAttacking && !deathListenerTask.IsCompleted)
+        {
+            timerMessage = "Waiting for raiders...";
+            await UpdateUI();
+            await Task.Delay(3000);
+
+            if (deathListenerTask.IsCompleted)
             {
                 BattleService.EndRaid();
                 if (currentPokemon == null) break;
@@ -813,11 +880,7 @@ else
                     isShiny = true;
                     currentPokemon.Name = TrainerService.CleanPokemonName(currentPokemon.Name);
                 }
-                Pokemon? pokeToSpawn = await PokemonService.GetPokemonByNameAsync(currentPokemon.Name, isShiny);
-                await RemovePokemon();
-                await UpdateUI();
-                await Task.Delay(3000);
-                if(pokeToSpawn is not null) await SpecificPokemon(pokeToSpawn);
+                pokeToSpawn = await PokemonService.GetPokemonByNameAsync(currentPokemon.Name, isShiny);
             }
         }
 
@@ -831,7 +894,9 @@ else
         raidCountdown = raidCountdownMax;
         BattleService.EndRaid();
         timerMessage = "";
+        await RemovePokemon();
         await UpdateUI();
+        if (pokeToSpawn is not null) await SpecificPokemon(pokeToSpawn);
     }
 
     private async Task SpecificPokemon(Pokemon p, bool DoNotCatch = false)
@@ -1082,13 +1147,27 @@ else
             await JS.InvokeVoidAsync("PlayAudio", "hit");
             HidePokemonDisplay(currentPokemon);
             SetCatchDisplay(["block;", "shaking"]);
-            await Task.Delay(500);
-            var healthRatio = (double)currentPokemon.CurrentHP / currentPokemon.MaxHP;
-            var numberOfShakes = CatchService.AttemptCatch(currentPokemon.CatchRate, healthRatio, hasUltraBall ? 2.0 : 1.0);
+            double healthRatio = 0.5 + ((currentPokemon.MaxHP - currentPokemon.CurrentHP) / (double)currentPokemon.MaxHP) * (1.5 - 0.5);
+            var numberOfShakes = CatchService.AttemptCatch(currentPokemon.CatchRate, healthRatio, hasUltraBall ? 2.0 : 1.0, catchMultiplier);
+
+            double chance = Math.Min(255,currentPokemon.CatchRate * healthRatio);
+
+            double baseCatchPercent = Math.Pow(chance / 256.0, 4) * 100.0;
+
+            double catchPercent = Math.Clamp(
+                baseCatchPercent,
+                0.01,
+                100.0
+            );
+
+            await InvokeMessage(new MarkupString($"\nCatching Odds: {catchPercent:0.00}%".Replace("\n", "<br />")));
+            await UpdateUI();
+            await Task.Delay(100);
+
             for (int i = 0; i < numberOfShakes; i++)
             {
                 await JS.InvokeVoidAsync("PlayAudio", "shaking");
-                await Task.Delay(800);
+                await Task.Delay(1000);
             }
 
             await Task.Delay(200);

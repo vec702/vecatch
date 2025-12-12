@@ -24,102 +24,24 @@ namespace VeCatch.Models
             using var db = new PokemonDatabase(optionsBuilder.Options);
 
             var existingPokemon = await db.Pokemon.FirstOrDefaultAsync(p => p.Id == id);
-
-            if (existingPokemon == null)
+            if (existingPokemon is not null && isShiny)
             {
-                Console.WriteLine($"No Pokémon found with ID {id}.");
-                return null;
+                if (!existingPokemon.Name.StartsWith("✨")) existingPokemon.Name = $"✨Shiny {existingPokemon.Name}✨";
             }
             return existingPokemon;
         }
 
-        public static async Task<Pokemon?> GetPokemonFromDbAsyncByName(string name, bool isShiny = false)
+        public static async Task<Pokemon?> GetPokemonFromDbByNameAsync(string name, bool isShiny = false)
         {
             var optionsBuilder = new DbContextOptionsBuilder<PokemonDatabase>();
             optionsBuilder.UseSqlite("Data Source=pokemon.db");
             using var db = new PokemonDatabase(optionsBuilder.Options);
             var existingPokemon = await db.Pokemon.FirstOrDefaultAsync(p => p.Name == name);
+            if (existingPokemon is not null && isShiny)
+            {
+                if(!existingPokemon.Name.StartsWith("✨")) existingPokemon.Name = $"✨Shiny {existingPokemon.Name}✨";
+            }
             return existingPokemon;
-        }
-        public static async Task<Pokemon?> GetPokemonAsync(string name, int level, bool isShiny=false)
-        {
-            using HttpClient client = new();
-            string url = $"https://pokeapi.co/api/v2/pokemon/{name.ToLower()}";
-
-            try
-            {
-                var response = await client.GetStringAsync(url);
-                var json = JsonNode.Parse(response);
-
-                if (json is null) return null;
-
-                name = json["name"]?.GetValue<string>() ?? "";
-
-                var cryData = json["cries"]?["latest"]?.GetValue<string>() ?? "";
-
-                int baseHP = json?["stats"]?[0]?["base_stat"]?.GetValue<int>() ?? 10;
-                int baseAttack = json?["stats"]?[1]?["base_stat"]?.GetValue<int>() ?? 10;
-                int baseDefense = json?["stats"]?[2]?["base_stat"]?.GetValue<int>() ?? 10;
-                int baseSpAtk = json?["stats"]?[3]?["base_stat"]?.GetValue<int>() ?? 10;
-                int baseSpDef = json?["stats"]?[4]?["base_stat"]?.GetValue<int>() ?? 10;
-                int baseSpeed = json?["stats"]?[5]?["base_stat"]?.GetValue<int>() ?? 10;
-                int pokedexNumber = json?["id"]?.GetValue<int>() ?? 1;
-
-                var type1Value = json?["types"]?[0]?["type"]?["name"]?.GetValue<string>();
-                PokemonType type1;
-                if (!Enum.TryParse(type1Value, true, out type1)) { type1 = PokemonType.None; }
-                var type2Value = json?["types"]?.AsArray().Count > 1
-                    ? json?["types"]?[1]?["type"]?["name"]?.GetValue<string>()
-                    : null;
-                PokemonType type2;
-                if (!Enum.TryParse(type2Value, true, out type2)) { type2 = PokemonType.None; }
-
-                string? speciesUrl = json?["species"]?["url"]?.GetValue<string>();
-                var speciesResponse = await client.GetStringAsync(speciesUrl);
-                var speciesJson = JsonNode.Parse(speciesResponse);
-                int catchRate = speciesJson?["capture_rate"]?.GetValue<int>() ?? 45;
-
-                var sprites = json?["sprites"];
-                // animated sprites from pokemon showdown
-                //string? defaultSprite = sprites?["other"]?["showdown"]?["front_default"]?.GetValue<string>() ?? "";
-                //string? shinySprite = sprites?["other"]?["showdown"]?["front_shiny"]?.GetValue<string>() ?? "";
-                string? defaultSprite = "";
-                string? shinySprite = "";
-
-                // fallback and use non-animated sprites if there is none available
-                if (defaultSprite == "")
-                {
-                    defaultSprite = sprites?["front_default"]?.GetValue<string>() ?? "";
-                }
-
-                if(shinySprite == "")
-                {
-                    shinySprite = sprites?["front_shiny"]?.GetValue<string>() ?? "";
-                }
-
-                string spriteUrl = string.Empty;
-
-                if (isShiny)
-                {
-                    spriteUrl = shinySprite;
-                    name = $"✨Shiny {name}✨";
-                } else
-                {
-                    spriteUrl = defaultSprite;
-                }
-
-                return new Pokemon(name, level, baseHP, baseAttack, baseDefense, baseSpAtk, baseSpDef, baseSpeed, type1, type2, catchRate)
-                {
-                    SpriteUrl = spriteUrl,
-                    Cry = cryData,
-                    NationalDexNo = pokedexNumber
-                };
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Error fetching Pokémon data: {ex.Message}");
-                return null;
-            }
         }
     }
     #endregion
@@ -200,8 +122,6 @@ namespace VeCatch.Models
             CurrentHP += amount;
             if (CurrentHP > MaxHP) CurrentHP = MaxHP;
         }
-
-        public bool IsFainted() => CurrentHP <= 0;
 
         public override string ToString()
         {

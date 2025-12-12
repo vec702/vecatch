@@ -6,7 +6,7 @@ namespace VeCatch.Models
     {
         [Key]
         public int Id { get; set; }
-        public string? Name { get; set; }
+        public string Name { get; set; } = string.Empty;
         public int SpriteIndex { get; set; }
         public List<Pokemon>? CaughtPokemon { get; set; }
         public int UltraBalls { get; set; } = 0;

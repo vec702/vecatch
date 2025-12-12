@@ -77,8 +77,6 @@ namespace VeCatch.Services
             {
                 await OnUpdateMessage($"{CultureInfo.InvariantCulture.TextInfo.ToTitleCase(Attacker.Name)} deals {finalDamage} damage!");
             }
-
-            IsAttacking = false;
         }
 
         private double GetTypeEffectiveness(string attackerType, string targetType)

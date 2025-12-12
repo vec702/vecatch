@@ -1,0 +1,12 @@
+﻿@inject NavigationManager Nav
+
+@code {
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+        {
+            Console.WriteLine("VeCatch initialized.");
+            Console.WriteLine($"Browser Source URL: {Nav.BaseUri}");
+        }
+    }
+}

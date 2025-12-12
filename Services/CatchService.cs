@@ -7,9 +7,10 @@ namespace VeCatch.Services
     {
         private readonly Random _random = new();
 
-        public int AttemptCatch(int catchRate, double healthModifier = 1.0, double ballModifier = 1.0)
+        public int AttemptCatch(int catchRate, double healthModifier = 1.0, double ballModifier = 1.0, double catchModifier = 1.0)
         {
-            double chance = Math.Min(255, catchRate * healthModifier * ballModifier);
+            double forgivenessModifier = 1.5;
+            double chance = Math.Min(255, catchRate * healthModifier * ballModifier * forgivenessModifier * catchModifier);
             int shakes = 0;
 
             for (int i = 0; i < 4; i++)

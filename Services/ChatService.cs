@@ -25,6 +25,7 @@ namespace VeCatch.Services
         public event Func<Task>? InvokeRemovePokemon;
         public event Func<Task>? InvokeRandomPokemon;
         public bool CONNECTED = false;
+        public bool messagesEnabled = true;
         public Pokemon? cs_currentPokemon = null;
         private readonly SemaphoreSlim _raidLock = new(1, 1);
         private readonly object _twitchLock = new();
@@ -66,11 +67,13 @@ namespace VeCatch.Services
             _client.Initialize(credentials, _channelName);
 
             _client.OnMessageReceived += Client_OnMessageReceived;
+            _client.OnConnected += (s, e) => CONNECTED = true;
+            _client.OnDisconnected += (s, e) => CONNECTED = false;
             _ = _client.Connect();
-            CONNECTED = _client.IsConnected;
         }
         public void SendAlert(string message)
         {
+            if (!messagesEnabled) return;
             if (CONNECTED && _client != null)
             {
                 lock (_twitchLock)
@@ -140,6 +143,7 @@ namespace VeCatch.Services
 
         private async Task RunRaidBattle(Trainer trainer)
         {
+            _battleService.IsAttacking = true;
             await _raidLock.WaitAsync();
             try
             {
@@ -223,11 +227,125 @@ namespace VeCatch.Services
             }
             finally
             {
+                // if the attacker is the last trainer in our list, stop the isattacking variable for garbage collection
+                if (trainer.Name == _battleService.Attackers[^1]) { _battleService.IsAttacking = false; }
                 _raidLock.Release();
             }
         }
+        // to be used for !steal and custom raids
+        private async Task RunMultiRaidBattle(List<Trainer> attackers, Trainer boss)
+        {
+            await _raidLock.WaitAsync();
+            try
+            {
+                var bossTeam = await LoadTeam(boss);
+                int bossIndex = 0;
 
+                if (bossTeam.Count == 0)
+                {
+                    SendAlert($"{boss.Name} has no team of Pokémon set!");
+                    return;
+                }
 
+                Pokemon? currentBossMon = null;
+
+                while (bossIndex < bossTeam.Count)
+                {
+                    sentOutMonFainted = false;
+                    currentBossMon = bossTeam[bossIndex];
+                    cs_currentPokemon = currentBossMon;
+                    currentBossMon.Heal(currentBossMon.MaxHP);
+
+                    if (ThrowOutPokemon is not null)
+                        await ThrowOutPokemon.Invoke(currentBossMon, true);
+
+                    await OnChatUpdateMessage($"{boss.Name} sent out {CultureInfo.InvariantCulture.TextInfo.ToTitleCase(currentBossMon.Name)}!");
+                    await Task.Delay(2000);
+
+                    foreach (var attackerTrainer in attackers)
+                    {
+                        var teamSlots = new[] { attackerTrainer.Team1, attackerTrainer.Team2, attackerTrainer.Team3, attackerTrainer.Team4, attackerTrainer.Team5, attackerTrainer.Team6 };
+
+                        foreach (var monName in teamSlots)
+                        {
+                            sentOutMonFainted = false;
+                            if (string.IsNullOrEmpty(monName)) break;
+                            if (cs_currentPokemon == null || cs_currentPokemon.CurrentHP <= 0) break;
+
+                            bool isShiny = await _trainerService.IsShinyByName(attackerTrainer, monName);
+                            var attackerMon = await _trainerService.GetPokemonFromDb(monName, attackerTrainer, isShiny);
+                            if (attackerMon == null) break;
+
+                            attackerMon.CurrentHP = attackerMon.MaxHP;
+
+                            if (SetAttackingPokemon is not null)
+                                await SetAttackingPokemon(attackerMon);
+
+                            ChangeSprite(attackerMon);
+                            await OnChatUpdateMessage($"{attackerTrainer.Name} sent out {CultureInfo.InvariantCulture.TextInfo.ToTitleCase(attackerMon.Name)}!");
+                            await Task.Delay(2000);
+
+                            while (cs_currentPokemon != null && cs_currentPokemon.CurrentHP > 0)
+                            {
+                                _battleService.AttackPokemon(attackerMon, cs_currentPokemon);
+                                await Task.Delay(750);
+
+                                if (cs_currentPokemon.CurrentHP > 0)
+                                {
+                                    _battleService.AttackPokemon(cs_currentPokemon, attackerMon);
+                                    await Task.Delay(750);
+                                }
+
+                                if (attackerMon.CurrentHP <= 0)
+                                {
+                                    sentOutMonFainted = true;
+                                    await OnChatUpdateMessage($"{attackerTrainer.Name}'s {CultureInfo.InvariantCulture.TextInfo.ToTitleCase(attackerMon.Name)} fainted!");
+                                    await Task.Delay(100);
+                                    break;
+                                }
+
+                                if (cs_currentPokemon.CurrentHP <= 0)
+                                {
+                                    await OnChatUpdateMessage($"{boss.Name}'s {CultureInfo.InvariantCulture.TextInfo.ToTitleCase(currentBossMon.Name)} fainted!");
+                                    sentOutMonFainted = true;
+                                    await Task.Delay(100);
+                                    break;
+                                }
+                            }
+
+                            if (cs_currentPokemon == null || cs_currentPokemon.CurrentHP <= 0)
+                                break;
+                        }
+
+                        if (cs_currentPokemon == null || cs_currentPokemon.CurrentHP <= 0)
+                            break;
+                    }
+
+                    bossIndex++;
+                    await Task.Delay(1000);
+                }
+
+                if (bossIndex >= bossTeam.Count)
+                {
+                    SendAlert($"{boss.Name} has been defeated!");
+                }
+                else
+                {
+                    SendAlert($"{boss.Name} defeated the raiders!");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.Write("[RAID ERROR] ");
+                Console.ResetColor();
+                Console.WriteLine($"for {boss.Name}: {ex}");
+            }
+            finally
+            {
+                _raidLock.Release();
+            }
+        }
         private async void RemoveInactiveChatters(object? sender, ElapsedEventArgs e)
         {
             var now = DateTime.UtcNow;
@@ -480,7 +598,7 @@ namespace VeCatch.Services
                             SendAlert($"{args[0]} doesn't have a trainer profile!");
                             break;
                         }
-                        SendAlert($"https://vec702.duckdns.org/channel/{_botUsername}/trainer/{trainer.Id}");
+                        SendAlert($"https://vec702.dev/channel/{_botUsername}/trainer/{trainer.Id}");
                     }
                     else
                     {
@@ -491,7 +609,7 @@ namespace VeCatch.Services
                             SendAlert($"{chatter.Name}, you don't have a trainer profile!");
                             break;
                         }
-                        SendAlert($"https://vec702.duckdns.org/channel/{_botUsername}/trainer/{trainer.Id}");
+                        SendAlert($"https://vec702.dev/channel/{_botUsername}/trainer/{trainer.Id}");
                     }
                     break;
                 #endregion
@@ -543,6 +661,7 @@ namespace VeCatch.Services
                         {
                             SendAlert($"{chatter.Name}, you don't have a trainer profile!");
                             _battleService.Attackers.Remove(chatter.Name);
+                            _battleService.IsAttacking = false;
                             break;
                         }
 
@@ -550,7 +669,7 @@ namespace VeCatch.Services
                         _battleService.Attackers.Add(trainer.Name);
                         _battleService.IsAttacking = true;
 
-                        string? pokemonName = args?.Length == 1 ? args[0] : null;
+                        string? pokemonName = args?.Length >= 1 ? CleanArg(args[0]) : null;
                         if (!string.IsNullOrWhiteSpace(pokemonName))
                         {
                             // attack with the pokemon specified
@@ -566,6 +685,7 @@ namespace VeCatch.Services
                                     SendAlert($"{chatter.Name}, you don't have the Pokémon {CultureInfo.InvariantCulture.TextInfo.ToTitleCase(pokemonName)}!");
                                 }
                                 _battleService.Attackers.Remove(chatter.Name);
+                                _battleService.IsAttacking = false;
                                 break;
                             }
 
@@ -578,6 +698,7 @@ namespace VeCatch.Services
 
                             await OnChatUpdateMessage($"{trainer.Name} sent out {CultureInfo.InvariantCulture.TextInfo.ToTitleCase(pokemonName)}!");
                             ChangeSprite(attacker);
+                            await Task.Delay(2000);
                             _battleService.AttackPokemon(attacker, cs_currentPokemon);
                         }
                         else
@@ -588,6 +709,7 @@ namespace VeCatch.Services
                             {
                                 SendAlert($"{chatter.Name}, you don't have any valid Pokémon!");
                                 _battleService.Attackers.Remove(chatter.Name);
+                                _battleService.IsAttacking = false;
                                 break;
                             }
 
@@ -603,6 +725,7 @@ namespace VeCatch.Services
                             await Task.Delay(2000);
                             _battleService.AttackPokemon(attacker, cs_currentPokemon);
                         }
+                        _battleService.IsAttacking = false;
                         break;
                     }
                 #endregion
@@ -835,8 +958,7 @@ namespace VeCatch.Services
                         if (args?.Length == 1)
                         {
                             await using var db = await _dbContextFactory.CreateDbContextAsync();
-                            var trainer = await db.Trainers
-                                .FirstOrDefaultAsync(t => t.Name.ToLower() == args[0].ToLower());
+                            var trainer = await db.Trainers.FirstOrDefaultAsync(t => t.Name.ToLower() == args[0].ToLower());
                             if (trainer is not null && !string.IsNullOrEmpty(trainer.Name))
                             {
                                 // only print however many string's have been set to a pokemon name
@@ -1049,6 +1171,7 @@ namespace VeCatch.Services
                         await Task.Delay(2000);
                         _battleService.AttackPokemon(attacker, cs_currentPokemon);
                     }
+                    _battleService.IsAttacking = false;
                     break;
                 #endregion
                 #region !changetrainer
