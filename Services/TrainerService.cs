@@ -20,7 +20,7 @@ namespace VeCatch.Services
             await using var db = await _dbContextFactory.CreateDbContextAsync();
 
             var dbPokemon = await db.CaughtPokemon
-                .Where(p => p.TrainerId == trainer.Id && p.Name == name)
+                .Where(p => p.TrainerId == trainer.Id && (p.Name == name || p.Name.Contains($"{name}✨")))
                 .FirstOrDefaultAsync();
 
             if (dbPokemon != null)
@@ -91,7 +91,6 @@ namespace VeCatch.Services
                 var cleanName = name.Split("✨")[1].Trim();
                 return cleanName;
             }
-
             return name;
         }
 
